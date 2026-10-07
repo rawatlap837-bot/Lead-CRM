@@ -1,0 +1,60 @@
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+async function equalSecret(provided, expected) {
+  const encode = new TextEncoder();
+  const [a, b] = await Promise.all([provided, expected].map(value => crypto.subtle.digest('SHA-256', encode.encode(value))));
+  const left = new Uint8Array(a), right = new Uint8Array(b);
+  let difference = 0; for (let i = 0; i < left.length; i++) difference |= left[i] ^ right[i];
+  return difference === 0;
+}
+export function normalizeLead(payload) {
+  if (!payload || Array.isArray(payload) || typeof payload !== 'object') throw new Error('Send a lead object.');
+  const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+  const phone = typeof payload.phone === 'string' ? payload.phone.trim().replace(/[\s().-]/g, '') : '';
+  const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+  if (!name || name.length > 200) throw new Error('Name is required and must be at most 200 characters.');
+  if (!/^\+?\d{7,15}$/.test(phone)) throw new Error('Provide a phone number with 7–15 digits, including its country code.');
+  if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Email is invalid.');
+  let answers = payload.answers ?? [];
+  if (!Array.isArray(answers) && (typeof answers !== 'object' || answers === null)) throw new Error('Answers must be an object or an array.');
+  if (Array.isArray(answers)) { if (answers.length > 100 || answers.some(item => !item || typeof item.question !== 'string' || !['string','number','boolean'].includes(typeof item.answer))) throw new Error('Provide up to 100 question and answer pairs.'); }
+  else if (Object.keys(answers).length > 100 || Object.values(answers).some(value => !['string','number','boolean'].includes(typeof value))) throw new Error('Provide up to 100 simple answers.');
+  const source = typeof payload.source === 'string' && payload.source.trim() ? payload.source.trim().slice(0, 200) : 'LMS website';
+  return { name, phone, email, answers, source, status: 'new' };
+}
+export function createLeadHandler({ env, fetch }) {
+  return async request => {
+    const url = env('SUPABASE_URL'), databaseKey = env('CRM_DATABASE_KEY'), secret = env('LEAD_INGEST_SECRET');
+    const ready = Boolean(url && databaseKey && secret && secret.length >= 32);
+    if (request.method === 'GET') {
+      const id = new URL(request.url).searchParams.get('connection_id');
+      if (!id) return json({ ready, serverToServer: true }, ready ? 200 : 503);
+      if (!ready) return json({ error: 'Receiver unavailable.' }, 503);
+      if (!/^[a-f0-9-]{36}$/i.test(id)) return json({ error: 'Invalid connection ID.' }, 400);
+      try {
+        const result = await fetch(`${url}/rest/v1/crm_integrations?id=eq.${id}&select=pixel_id&limit=1`, { headers: { apikey: databaseKey, Authorization: `Bearer ${databaseKey}` }, signal: AbortSignal.timeout(10000) });
+        if (!result.ok) return json({ error: 'Configuration unavailable.' }, 502);
+        const rows = await result.json();
+        return rows[0] ? json({ pixel_id: rows[0].pixel_id }) : json({ error: 'Connection not found.' }, 404);
+      } catch { return json({ error: 'Configuration unavailable.' }, 502); }
+    }
+    if (request.method !== 'POST') return json({ error: 'Use POST from your website backend.' }, 405);
+    if (!ready) return json({ error: 'Lead receiver is not configured.' }, 503);
+    const authorization = request.headers.get('authorization') || '';
+    const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    if (!supplied || !await equalSecret(supplied, secret)) return json({ error: 'Unauthorized.' }, 401);
+    if (!request.headers.get('content-type')?.includes('application/json')) return json({ error: 'Send application/json.' }, 415);
+    try {
+      if (Number(request.headers.get('content-length') || 0) > 65536) return json({ error: 'Lead payload is too large.' }, 413);
+      const reader = request.body?.getReader(); if (!reader) return json({ error: 'Lead payload is required.' }, 400);
+      const chunks = []; let size = 0;
+      while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > 65536) { await reader.cancel(); return json({ error: 'Lead payload is too large.' }, 413); } chunks.push(value); }
+      const bytes = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      let lead;
+      try { lead = normalizeLead(JSON.parse(new TextDecoder().decode(bytes))); } catch (error) { return json({ error: error instanceof SyntaxError ? 'Invalid JSON.' : error.message }, 400); }
+      const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/leads?on_conflict=phone&select=id`, { method: 'POST', headers: { apikey: databaseKey, Authorization: `Bearer ${databaseKey}`, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' }, body: JSON.stringify(lead), signal: AbortSignal.timeout(10000) });
+      if (!response.ok) { console.error('Lead insertion failed with HTTP', response.status); return json({ error: 'Could not save the lead. Retry or contact the CRM administrator.' }, 502); }
+      const rows = await response.json();
+      return json({ success: true, created: rows.length > 0, ...(rows[0]?.id ? { id: rows[0].id } : {}) }, rows.length ? 201 : 200);
+    } catch { return json({ error: 'Lead delivery is temporarily unavailable. Please retry.' }, 502); }
+  };
+}

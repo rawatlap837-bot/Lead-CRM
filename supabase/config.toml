@@ -1,0 +1,7 @@
+[functions.lead-ingest]
+verify_jwt = false
+entrypoint = "./functions/lead-ingest/index.js"
+
+[functions.meta-leads]
+verify_jwt = false
+entrypoint = "./functions/meta-leads/index.js"
