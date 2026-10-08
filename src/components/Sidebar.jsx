@@ -31,7 +31,7 @@ export default function Sidebar() {
         window.matchMedia("(min-width: 1024px)").matches,
     ),
     [busy, setBusy] = useState(false),
-    { session } = useAuth(),
+    { session, access } = useAuth(),
     toast = useToast(),
     location = useLocation();
   const drawer = useRef(null),
@@ -175,7 +175,7 @@ export default function Sidebar() {
               <p className="truncate text-xs font-semibold">
                 {session?.user.email}
               </p>
-              <p className="mt-1 text-[10px] text-slate-400">Your workspace</p>
+              <p className="mt-1 text-[10px] text-slate-400">{access?.is_admin ? "Administrator" : "Shared page workspace"}</p>
             </div>
           </div>
           <button

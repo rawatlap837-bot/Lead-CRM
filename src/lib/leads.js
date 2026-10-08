@@ -37,10 +37,51 @@ function leadQuery(filters = {}) {
       );
   }
   if (filters.status) query = query.eq("status", filters.status);
+  if (filters.source) query = query.eq("source", filters.source);
   return query.order("created_at", { ascending: false }).order("id");
 }
 export async function fetchLeads({ page = 0, ...filters } = {}) {
   return result(leadQuery(filters).range(page * 25, page * 25 + 24));
+}
+export async function fetchLeadSources() {
+  const sources = new Set();
+  for (let offset = 0; ; offset += 1000) {
+    const { data } = await result(
+      client()
+        .from("leads")
+        .select("source")
+        .not("source", "is", null)
+        .order("source")
+        .range(offset, offset + 999),
+    );
+    data.forEach((lead) => {
+      const source = typeof lead.source === "string" ? lead.source.trim() : "";
+      if (source) sources.add(source);
+    });
+    if (data.length < 1000) break;
+  }
+  return [...sources].sort((a, b) => a.localeCompare(b));
+}
+export async function fetchLeadSourceStats() {
+  const stats = {};
+  for (let offset = 0; ; offset += 1000) {
+    const { data } = await result(
+      client()
+        .from("leads")
+        .select("source,status")
+        .range(offset, offset + 999),
+    );
+    data.forEach(({ source, status }) => {
+      const name = typeof source === "string" ? source.trim() : "";
+      const key = name || "__unassigned__";
+      stats[key] ??= { total: 0, new: 0, converted: 0 };
+      stats[key].total++;
+      if (status === "new") stats[key].new++;
+      if (status === "converted") stats[key].converted++;
+    });
+    if (data.length < 1000) break;
+  }
+  return stats;
 }
 export async function fetchLead(id) {
   return (

@@ -5,6 +5,9 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  const [access,setAccess]=useState(null);
+  const [accessLoading,setAccessLoading]=useState(false);
+  const [accessError,setAccessError]=useState("");
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
@@ -42,8 +45,21 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe();
     };
   }, []);
+  useEffect(() => {
+    let active=true;
+    setAccess(null); setAccessError("");
+    if(!session?.user?.id || !supabase) {setAccessLoading(false); return;}
+    setAccessLoading(true);
+    supabase.rpc('crm_access_context').then(({data,error:issue})=>{
+      if(!active) return;
+      if(issue) setAccessError('Workspace access settings are not installed or could not load. Contact the administrator.');
+      else setAccess(data);
+    }).catch(()=>{if(active) setAccessError('Could not verify workspace access. Please try signing in again.');})
+      .finally(()=>{if(active) setAccessLoading(false);});
+    return ()=>{active=false;};
+  },[session?.user?.id]);
   return (
-    <AuthContext.Provider value={{ session, loading, error }}>
+    <AuthContext.Provider value={{ session, loading, error, access, accessLoading: accessLoading || Boolean(session && access === null && !accessError), accessError }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,3 +1,4 @@
+import { useAuth } from '../context/auth-state';
 import { useRef, useState } from "react";
 import { STATUSES, statusLabel } from "../lib/leads";
 import { todayIST } from "../lib/dates";
@@ -27,13 +28,14 @@ export function StatusSelect({
     </select>
   );
 }
-export function LeadForm({ lead, onSave, onCancel, onBusyChange }) {
+export function LeadForm({ lead, defaultSource, onSave, onCancel, onBusyChange }) {
+  const {access}=useAuth();
   const pending = useRef(false);
   const [values, setValues] = useState({
       name: lead?.name || "",
       email: lead?.email || "",
       phone: lead?.phone || "",
-      source: lead?.source || "",
+      source: lead?.source || defaultSource || access?.sources?.[0] || "",
       status: lead?.status || "new",
     }),
     [busy, setBusy] = useState(false),
@@ -97,13 +99,15 @@ export function LeadForm({ lead, onSave, onCancel, onBusyChange }) {
             placeholder="name@company.com"
           />
         </div>
-        <Field
-          label="Source"
-          name="source"
-          value={values.source}
-          onChange={change}
-          placeholder="e.g. Website, referral, campaign"
-        />
+        {access && !access.is_admin ? (
+          <label className="field">Landing page
+            <select className="input" name="source" value={values.source} onChange={change} required>
+              {access.sources.map(source=><option key={source} value={source}>{source}</option>)}
+            </select>
+          </label>
+        ) : (
+          <Field label="Source" name="source" value={values.source} onChange={change} placeholder="e.g. Website, referral, campaign"/>
+        )}
         <label className="field">
           Status
           <select

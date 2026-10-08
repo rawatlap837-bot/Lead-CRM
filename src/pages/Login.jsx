@@ -13,6 +13,7 @@ export default function Login() {
     [password, setPassword] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [notice,setNotice]=useState("");
   if (loading) return <Spinner full />;
   if (session) return <Navigate to={location.state?.from || "/"} replace />;
   async function submit(event) {
@@ -26,10 +27,30 @@ export default function Login() {
       });
       if (error) throw error;
     } catch (issue) {
-      setError(issue.message);
+      setError(issue.message === "Invalid login credentials" ? "Email or password was not accepted. Use Forgot password or email yourself a sign-in link. Your administrator role does not create a password." : issue.message);
     } finally {
       setBusy(false);
     }
+  }
+  async function emailLogin() {
+    if(busy) return;
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {setError("Enter your email address first."); return;}
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const {error:issue}=await supabase.auth.signInWithOtp({email:email.trim(),options:{shouldCreateUser:false,emailRedirectTo:window.location.origin+'/'}});
+      if(issue) throw issue;
+      setNotice("Check your email for a sign-in link. Use the email your administrator invited.");
+    } catch(issue) {setError(issue.message);} finally {setBusy(false);}
+  }
+  async function resetPassword() {
+    if(busy || !isConfigured) return;
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {setError("Enter your email address first."); return;}
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const {error:issue}=await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin+'/reset-password'});
+      if(issue) throw issue;
+      setNotice("If an account exists for this email, you will receive a password reset link. Open it to choose a new password.");
+    } catch(issue) {setError(issue.message);} finally {setBusy(false);}
   }
   return (
     <div className="grid min-h-dvh bg-white lg:grid-cols-2">
@@ -130,9 +151,11 @@ export default function Login() {
               )}
             </button>
           </form>
+          <button type="button" className="btn-secondary mt-3 w-full" disabled={busy || !isConfigured} onClick={emailLogin}>Email me a sign-in link</button>
+          <button type="button" className="mt-3 w-full text-sm font-semibold text-indigo-600" disabled={busy || !isConfigured} onClick={resetPassword}>Forgot password?</button>
+          {notice && <p role="status" className="mt-3 text-sm text-emerald-700">{notice}</p>}
           <p className="mt-7 text-center text-xs leading-5 text-slate-400">
-            For access to Supabase records, create an email/password user in
-            your Supabase project's Authentication section.
+            Use the email your administrator invited. Your access is limited to the landing pages shared with you.
           </p>
         </div>
       </section>

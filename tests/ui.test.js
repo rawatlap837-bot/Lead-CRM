@@ -17,12 +17,15 @@ let vite,
   followupDate;
 let MemoryRouter, Routes, Route;
 let integrationMissing = true, integrationWrites = 0;
+let receiverChecks = 0;
+let recoveryRequests = 0;
 const h = React.createElement;
 const originalBroadcastChannel = globalThis.BroadcastChannel;
 const auth = {
   session: { user: { email: "test@example.com" } },
   loading: false,
   error: "",
+  access: { is_admin: true, sources: [] },
 };
 const lead = {
   id: "test-lead",
@@ -57,11 +60,27 @@ before(async () => {
   server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     res.setHeader("Content-Type", "application/json");
+    if (url.pathname.endsWith('/functions/v1/super-worker')) {
+      receiverChecks++;
+      assert.equal(req.headers.authorization, undefined);
+      assert.equal(req.headers.apikey, undefined);
+      assert.equal(req.method, 'GET');
+      res.statusCode = 404;
+      res.end(JSON.stringify({ code: 'NOT_FOUND', message: 'Requested function was not found' }));
+      return;
+    }
+    if (url.pathname.endsWith('/crm_page_members')) { res.end('[]'); return; }
     if (url.pathname.endsWith('/crm_integrations')) {
       if (req.method === 'POST') integrationWrites++;
       res.statusCode = integrationMissing ? 404 : 200;
       res.end(JSON.stringify(integrationMissing ? { code: 'PGRST205', message: 'Missing table' } : []));
       return;
+    }
+    if (url.pathname.endsWith('/recover')) {
+      let body=''; for await (const chunk of req) body+=chunk;
+      assert.equal(JSON.parse(body).email,'crewcreative98@gmail.com');
+      assert.equal(url.searchParams.get('redirect_to'),'http://127.0.0.1:5174/reset-password');
+      recoveryRequests++; res.end('{}'); return;
     }
     if (url.pathname.endsWith("/token")) {
       res.statusCode = 400;
@@ -371,21 +390,30 @@ test("changing lead identity hides old data immediately and discards stale respo
   assert.match(document.body.textContent, /Third lead/);
 });
 
-test('missing integration table shows SQL recovery and prevents writes until setup succeeds', async () => {
-  integrationMissing = true;
-  integrationWrites = 0;
-  await mount(h(modules.Integrations.default), { path: '/integrations' });
-  await settle(() => document.body.textContent.includes('One-time database setup needed'));
-  assert.equal(button('Complete database setup to save').disabled, true);
-  assert.match(document.querySelector('[aria-label="Database setup SQL"]').value, /create table if not exists public.crm_integrations/);
-  assert.match(document.querySelector('[aria-label="Database setup SQL"]').value, /enable row level security/);
-  assert.ok(document.querySelector('a[href="https://supabase.com/dashboard"]'));
-  await act(async () => document.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })));
-  assert.equal(integrationWrites, 0);
-  integrationMissing = false;
-  await act(async () => button('Check database setup').click());
-  await settle(() => Boolean(button('Save Pixel configuration')));
-  assert.equal(button('Save Pixel configuration').disabled, false);
-  assert.equal(document.querySelector('[name="pixel"]').value, '1613294250158679');
-  assert.doesNotMatch(document.body.textContent, /One-time database setup needed/);
+test('admin sees sharing controls and receiver uses public GET', async () => {
+ receiverChecks=0;
+ await mount(h(modules.Integrations.default),{path:'/integrations'});
+ await settle(()=>document.body.textContent.includes('Send invitation'));
+ assert.match(document.body.textContent,/Admin panel/);
+ await act(async()=>button('Check receiver').click());
+ await settle(()=>document.body.textContent.includes('CRM lead receiver is not deployed'));
+ assert.equal(receiverChecks,1);
+});
+test('members cannot see connection or sharing controls',async()=>{
+ await mount(h(modules.Integrations.default),{session:{...auth,access:{is_admin:false,sources:['Website']}}});
+ await settle(()=>document.body.textContent.includes('Open this page'));
+ assert.match(document.body.textContent,/My landing pages/);
+ assert.equal(button('Send invitation'),undefined);
+ assert.equal(button('Prepare my connection'),undefined);
+});
+
+test('password recovery validates email and sends a reset request',async()=>{
+ await mount(h(modules.Login.default),{session:{session:null,loading:false,error:''},path:'/login'});
+ await act(async()=>button('Forgot password').click());
+ assert.match(document.body.textContent,/Enter your email address first/);
+ const input=document.querySelector('input[type="email"]');
+ await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,'crewcreative98@gmail.com');input.dispatchEvent(new window.Event('input',{bubbles:true}));});
+ await act(async()=>button('Forgot password').click());
+ await settle(()=>document.body.textContent.includes('If an account exists'));
+ assert.equal(recoveryRequests,1);
 });

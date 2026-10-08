@@ -4,6 +4,20 @@ import { createLeadHandler } from '../supabase/functions/lead-ingest/handler.js'
 import { createMetaHandler } from '../supabase/functions/meta-leads/handler.js';
 const secrets = { SUPABASE_URL: 'https://example.supabase.co', CRM_DATABASE_KEY: 'server-key', LEAD_INGEST_SECRET: 'x'.repeat(40), META_APP_SECRET: 'app-secret', META_PAGE_ID: '123', META_PAGE_ACCESS_TOKEN: 'page-token', META_GRAPH_VERSION: 'v99.0', META_VERIFY_TOKEN: 'verify' };
 const env = key => secrets[key];
+test('receiver preflight succeeds before setup and all health/auth responses include CORS', async () => {
+  const handler = createLeadHandler({ env: () => undefined, fetch: () => { throw new Error('No database request expected'); } });
+  const preflight = await handler(new Request('https://receiver', { method: 'OPTIONS', headers: { Origin: 'http://127.0.0.1:5174' } }));
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(preflight.headers.get('access-control-allow-headers'), /authorization/);
+  const health = await handler(new Request('https://receiver'));
+  assert.equal(health.status, 503);
+  assert.equal(health.headers.get('access-control-allow-origin'), '*');
+  const configured = createLeadHandler({ env, fetch: () => { throw new Error('Must not insert'); } });
+  const denied = await configured(new Request('https://receiver', { method: 'POST' }));
+  assert.equal(denied.status, 401);
+  assert.equal(denied.headers.get('access-control-allow-origin'), '*');
+});
 test('Website delivery authenticates, validates, and preserves existing leads on retry', async () => {
   let calls = 0;
   const handler = createLeadHandler({ env, fetch: async (url, options) => { calls++; assert.match(url, /on_conflict=phone/); assert.match(options.headers.Prefer, /ignore-duplicates/); const lead = JSON.parse(options.body); assert.equal(lead.status, 'new'); assert.equal(lead.phone, '+919876543210'); return Response.json(calls === 1 ? [{ id: 'saved' }] : []); } });

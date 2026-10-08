@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Sidebar from "./components/Sidebar";
 import { lazy, Suspense } from "react";
 import Spinner from "./components/Spinner";
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Login = lazy(() => import("./pages/Login"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Leads = lazy(() => import("./pages/Leads"));
@@ -22,6 +23,7 @@ export default function App() {
             <Suspense fallback={<Spinner full />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route element={<ProtectedRoute />}>
                   <Route element={<Sidebar />}>
                     <Route index element={<Dashboard />} />
