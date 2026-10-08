@@ -4,6 +4,7 @@ import http from "node:http";
 import { resolve } from "node:path";
 import { JSDOM } from "jsdom";
 import { createServer } from "vite";
+import reactPlugin from "@vitejs/plugin-react";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -69,6 +70,7 @@ before(async () => {
       res.end(JSON.stringify({ code: 'NOT_FOUND', message: 'Requested function was not found' }));
       return;
     }
+    if (url.pathname.endsWith('/crm_import_rows')) { res.end('[]'); return; }
     if (url.pathname.endsWith('/crm_page_members')) { res.end('[]'); return; }
     if (url.pathname.endsWith('/crm_integrations')) {
       if (req.method === 'POST') integrationWrites++;
@@ -119,6 +121,8 @@ before(async () => {
   process.env.VITE_SUPABASE_URL = `http://127.0.0.1:${server.address().port}`;
   process.env.VITE_SUPABASE_ANON_KEY = "local-ui-fixture";
   vite = await createServer({
+    configFile: false,
+    plugins: [reactPlugin()],
     server: { middlewareMode: true, hmr: false, ws: false },
     ssr: { noExternal: ["react-router", "react-router-dom"] },
     resolve: {
@@ -412,7 +416,7 @@ test('password recovery validates email and sends a reset request',async()=>{
  await act(async()=>button('Forgot password').click());
  assert.match(document.body.textContent,/Enter your email address first/);
  const input=document.querySelector('input[type="email"]');
- await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,'crewcreative98@gmail.com');input.dispatchEvent(new window.Event('input',{bubbles:true}));});
+ await act(async()=>{const props=input[Object.keys(input).find(key=>key.startsWith('__reactProps'))];props.onChange({target:{value:'crewcreative98@gmail.com'}});});
  await act(async()=>button('Forgot password').click());
  await settle(()=>document.body.textContent.includes('If an account exists'));
  assert.equal(recoveryRequests,1);

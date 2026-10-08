@@ -9,3 +9,7 @@ entrypoint = "./functions/meta-leads/index.js"
 [functions.page-invite]
 verify_jwt = false
 entrypoint = "./functions/page-invite/index.js"
+
+[functions.bright-action]
+verify_jwt = false
+entrypoint = "./functions/page-invite/index.js"

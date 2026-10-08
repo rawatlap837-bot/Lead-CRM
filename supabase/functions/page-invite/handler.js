@@ -31,7 +31,9 @@ export function createInviteHandler({env,fetch}) {
    const source=typeof input.source==='string'?input.source.trim():'';
    if(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!source||source.length>200) return reply({error:'Enter a valid email and landing page.'},400);
    const exists=await call('/rest/v1/leads?'+new URLSearchParams({source:'eq.'+source,select:'id',limit:'1'}),{headers:serviceHeaders});
-   if(!exists.ok || !(await exists.json()).length) return reply({error:'This landing page has no leads yet or does not exist.'},400);
+   let found=exists.ok && (await exists.json()).length>0;
+   if(!found){const files=await call('/rest/v1/crm_import_rows?'+new URLSearchParams({source:'eq.'+source,select:'id',limit:'1'}),{headers:serviceHeaders});found=files.ok&&(await files.json()).length>0;}
+   if(!found) return reply({error:'This landing page has no data yet or does not exist.'},400);
    const grant=await call('/rest/v1/crm_page_members?on_conflict=source,email',{method:'POST',headers:{...serviceHeaders,Prefer:'resolution=merge-duplicates'},body:JSON.stringify({source,email,invited_by:user.id})});
    if(!grant.ok) return reply({error:'Could not grant access.'},502);
    const redirect=new URL('leads',appUrl.href.endsWith('/')?appUrl.href:appUrl.href+'/');

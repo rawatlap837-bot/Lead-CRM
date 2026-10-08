@@ -1,3 +1,5 @@
+import FileData from '../components/FileData';
+import ImportLeads from '../components/ImportLeads';
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -28,6 +30,8 @@ import EmptyState from "../components/EmptyState";
 import Avatar from "../components/Avatar";
 import useAutoRefresh from '../lib/useAutoRefresh';
 export default function Leads() {
+  const [importOpen,setImportOpen]=useState(false);
+  const [fileVersion,setFileVersion]=useState(0);
   const [params, setParams] = useSearchParams(),
     [modal, setModal] = useState(params.get("add") === "1"),
     [search, setSearch] = useState(""),
@@ -52,9 +56,9 @@ export default function Leads() {
     () => fetchLeads({ search: debounced, status, source, page }),
     [debounced, status, source, page],
   );
-  const { data: sourceOptions } = useLoad(() => fetchLeadSources(), []);
+  const { data: sourceOptions, reload: reloadSources } = useLoad(() => fetchLeadSources(), []);
   const sources = sourceOptions || [];
-  const { data: sourceStatsData } = useLoad(() => fetchLeadSourceStats(), []);
+  const { data: sourceStatsData, reload: reloadStats } = useLoad(() => fetchLeadSourceStats(), []);
   const sourceStats = sourceStatsData || {};
   const activeStats = source
     ? sourceStats[source] || { total: 0, new: 0, converted: 0 }
@@ -105,6 +109,7 @@ export default function Leads() {
         title="Leads"
         description="All your opportunities, in one place."
       >
+        <button className="btn-secondary" onClick={()=>setImportOpen(true)}>Import Excel</button>
         <button className="btn-primary" onClick={() => setModal(true)}>
           <Plus size={17} />
           Add lead
@@ -287,6 +292,8 @@ export default function Leads() {
           />
         )}
       </section>
+      <FileData key={source} source={source} version={fileVersion}/>
+      {importOpen && <Modal title="Import leads into a landing page" busy={saving} onClose={()=>setImportOpen(false)}><ImportLeads sources={sources} defaultSource={source} onBusyChange={setSaving} onImported={async selected=>{setFileVersion(v=>v+1);setSource(selected);setPage(0);await Promise.all([reload(),reloadSources(),reloadStats()]);}}/></Modal>}
       {modal && (
         <Modal title="Add a new lead" onClose={close} busy={saving}>
           <LeadForm defaultSource={source} onSave={add} onCancel={close} onBusyChange={setSaving} />

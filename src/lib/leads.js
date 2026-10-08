@@ -1,3 +1,4 @@
+import {fileSources,fileStats} from './flexibleImports';
 import { supabase } from "./supabase";
 import { rangeFor, todayIST } from "./dates";
 import { validDate, validateFollowup } from "./validation";
@@ -60,6 +61,7 @@ export async function fetchLeadSources() {
     });
     if (data.length < 1000) break;
   }
+  (await fileSources()).forEach(source=>sources.add(source));
   return [...sources].sort((a, b) => a.localeCompare(b));
 }
 export async function fetchLeadSourceStats() {
@@ -81,6 +83,7 @@ export async function fetchLeadSourceStats() {
     });
     if (data.length < 1000) break;
   }
+  for(const [source,total] of Object.entries(await fileStats())){stats[source]??={total:0,new:0,converted:0};stats[source].total+=total;}
   return stats;
 }
 export async function fetchLead(id) {
