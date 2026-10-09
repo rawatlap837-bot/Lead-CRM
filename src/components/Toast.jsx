@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 import { ToastContext } from "../context/toast-state";
 export function ToastProvider({ children }) {
-  const [items, setItems] = useState([]),
-    timers = useRef([]);
+  const [items, setItems] = useState([]);
+  const timers = useRef([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const toast = useCallback((message, type = "error") => {
     const id = crypto.randomUUID();
@@ -36,9 +36,7 @@ export function ToastProvider({ children }) {
             <p className="min-w-0 flex-1 break-words text-sm">{item.message}</p>
             <button
               aria-label="Dismiss notification"
-              onClick={() =>
-                setItems((list) => list.filter((t) => t.id !== item.id))
-              }
+              onClick={() => setItems((list) => list.filter((t) => t.id !== item.id))}
             >
               <X size={16} />
             </button>

@@ -12,8 +12,7 @@ test("answers handle null, arrays, objects, strings and malformed JSON", () => {
   ]);
   assert.equal(normalizeAnswers("not JSON")[0].answer, "not JSON");
   assert.equal(
-    normalizeAnswers([null, { question: "Team", answer: { size: 4 } }])[0]
-      .answer,
+    normalizeAnswers([null, { question: "Team", answer: { size: 4 } }])[0].answer,
     '{"size":4}',
   );
 });

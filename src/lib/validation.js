@@ -13,18 +13,13 @@ export function validateLead(values) {
     return "Enter a phone number using digits and an optional leading +.";
   if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))
     return "Please enter a valid email address.";
-  if (
-    !["new", "contacted", "follow-up", "converted", "lost"].includes(
-      values.status,
-    )
-  )
+  if (!["new", "contacted", "follow-up", "converted", "lost"].includes(values.status))
     return "Please select a valid lead status.";
   return "";
 }
 export function validateFollowup(values, today = todayIST()) {
   if (!values.description?.trim()) return "Please enter a follow-up note.";
-  if (!validDate(values.connected_on))
-    return "Please choose a valid connected date.";
+  if (!validDate(values.connected_on)) return "Please choose a valid connected date.";
   if (!validDate(values.reconnect_on) || values.reconnect_on < today)
     return "Reconnect date must be today or later.";
   return "";

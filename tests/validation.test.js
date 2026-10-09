@@ -1,10 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  validDate,
-  validateFollowup,
-  validateLead,
-} from "../src/lib/validation.js";
+import { validDate, validateFollowup, validateLead } from "../src/lib/validation.js";
 test("invalid calendar dates and empty dates are rejected", () => {
   assert.equal(validDate("2026-02-30"), false);
   assert.equal(validDate(""), false);
@@ -26,10 +22,7 @@ test("follow-ups require real connected and reconnect dates, a nonblank note, an
     validateFollowup({ ...valid, reconnect_on: "2026-10-06" }, "2026-10-07"),
     /today/,
   );
-  assert.match(
-    validateFollowup({ ...valid, description: " " }, "2026-10-07"),
-    /note/,
-  );
+  assert.match(validateFollowup({ ...valid, description: " " }, "2026-10-07"), /note/);
 });
 test("manual lead form validates names, phone format, emails and statuses", () => {
   const valid = {

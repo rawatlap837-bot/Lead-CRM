@@ -10,10 +10,7 @@ test("REST and auth endpoint URLs normalize to project base URL", () => {
     normalizeSupabaseUrl("https://project.supabase.co/auth/v1"),
     "https://project.supabase.co",
   );
-  assert.equal(
-    normalizeSupabaseUrl("http://localhost:54321"),
-    "http://localhost:54321",
-  );
+  assert.equal(normalizeSupabaseUrl("http://localhost:54321"), "http://localhost:54321");
   assert.equal(normalizeSupabaseUrl(""), "");
   assert.throws(() => normalizeSupabaseUrl("invalid url"));
 });

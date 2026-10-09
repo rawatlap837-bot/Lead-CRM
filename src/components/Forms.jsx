@@ -1,14 +1,10 @@
-import { useAuth } from '../context/auth-state';
+import { useAuth } from "../context/auth-state";
 import { useRef, useState } from "react";
 import { STATUSES, statusLabel } from "../lib/leads";
 import { todayIST } from "../lib/dates";
 import { validateLead, validateFollowup } from "../lib/validation";
-export function StatusSelect({
-  value,
-  onChange,
-  disabled,
-  label = "Lead status",
-}) {
+import { sourceName } from "../lib/personalWorkspace";
+export function StatusSelect({ value, onChange, disabled, label = "Lead status" }) {
   return (
     <select
       aria-label={label}
@@ -17,9 +13,7 @@ export function StatusSelect({
       onChange={(event) => onChange(event.target.value)}
       disabled={disabled}
     >
-      {!STATUSES.includes(value) && (
-        <option value={value}>{value || "Unknown"}</option>
-      )}
+      {!STATUSES.includes(value) && <option value={value}>{value || "Unknown"}</option>}
       {STATUSES.map((status) => (
         <option key={status} value={status}>
           {statusLabel(status)}
@@ -29,17 +23,22 @@ export function StatusSelect({
   );
 }
 export function LeadForm({ lead, defaultSource, onSave, onCancel, onBusyChange }) {
-  const {access}=useAuth();
+  const { access } = useAuth();
   const pending = useRef(false);
   const [values, setValues] = useState({
-      name: lead?.name || "",
-      email: lead?.email || "",
-      phone: lead?.phone || "",
-      source: lead?.source || defaultSource || access?.sources?.[0] || "",
-      status: lead?.status || "new",
-    }),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    name: lead?.name || "",
+    email: lead?.email || "",
+    phone: lead?.phone || "",
+    source:
+      lead?.source ||
+      defaultSource ||
+      (access?.is_admin ? "" : access?.personal_source) ||
+      access?.sources?.[0] ||
+      "",
+    status: lead?.status || "new",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const change = (event) =>
     setValues((v) => ({ ...v, [event.target.name]: event.target.value }));
   async function submit(event) {
@@ -100,22 +99,34 @@ export function LeadForm({ lead, defaultSource, onSave, onCancel, onBusyChange }
           />
         </div>
         {access && !access.is_admin ? (
-          <label className="field">Landing page
-            <select className="input" name="source" value={values.source} onChange={change} required>
-              {access.sources.map(source=><option key={source} value={source}>{source}</option>)}
+          <label className="field">
+            Landing page
+            <select
+              className="input"
+              name="source"
+              value={values.source}
+              onChange={change}
+              required
+            >
+              {access.sources.map((source) => (
+                <option key={source} value={source}>
+                  {sourceName(source, {}, access?.personal_source)}
+                </option>
+              ))}
             </select>
           </label>
         ) : (
-          <Field label="Source" name="source" value={values.source} onChange={change} placeholder="e.g. Website, referral, campaign"/>
+          <Field
+            label="Source"
+            name="source"
+            value={values.source}
+            onChange={change}
+            placeholder="e.g. Website, referral, campaign"
+          />
         )}
         <label className="field">
           Status
-          <select
-            name="status"
-            className="input"
-            value={values.status}
-            onChange={change}
-          >
+          <select name="status" className="input" value={values.status} onChange={change}>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
                 {statusLabel(s)}
@@ -153,20 +164,15 @@ export function Field({ label, ...props }) {
     </label>
   );
 }
-export function FollowupForm({
-  onSave,
-  onCancel,
-  reschedule = false,
-  onBusyChange,
-}) {
+export function FollowupForm({ onSave, onCancel, reschedule = false, onBusyChange }) {
   const pending = useRef(false);
   const [values, setValues] = useState({
-      description: "",
-      connected_on: todayIST(),
-      reconnect_on: todayIST(),
-    }),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    description: "",
+    connected_on: todayIST(),
+    reconnect_on: todayIST(),
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const change = (event) =>
     setValues((v) => ({ ...v, [event.target.name]: event.target.value }));
   async function submit(event) {
@@ -247,11 +253,7 @@ export function FollowupForm({
           </button>
         )}
         <button disabled={busy} className="btn-primary">
-          {busy
-            ? "Saving…"
-            : reschedule
-              ? "Reschedule follow-up"
-              : "Save follow-up"}
+          {busy ? "Saving…" : reschedule ? "Reschedule follow-up" : "Save follow-up"}
         </button>
       </div>
     </form>

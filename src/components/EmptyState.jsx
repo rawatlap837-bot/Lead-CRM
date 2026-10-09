@@ -10,9 +10,7 @@ export default function EmptyState({
         <Inbox size={24} />
       </div>
       <h3 className="font-semibold text-slate-800">{title}</h3>
-      <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
-        {description}
-      </p>
+      <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">{description}</p>
       {action && <div className="mt-5">{action}</div>}
     </div>
   );

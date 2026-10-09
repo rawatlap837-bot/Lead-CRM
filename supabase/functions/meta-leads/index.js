@@ -1,2 +1,2 @@
-import { createMetaHandler } from './handler.js';
-Deno.serve(createMetaHandler({ env: name => Deno.env.get(name), fetch }));
+import { createMetaHandler } from "./handler.js";
+Deno.serve(createMetaHandler({ env: (name) => Deno.env.get(name), fetch }));

@@ -19,8 +19,8 @@ export default class ErrorBoundary extends Component {
           <AlertCircle className="mx-auto mb-4 text-rose-500" size={32} />
           <h1 className="text-xl font-bold">Let’s reconnect your workspace</h1>
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            The page couldn’t finish loading. Reload to reconnect to your
-            Supabase workspace. Your saved records are safe.
+            The page couldn’t finish loading. Reload to reconnect to your Supabase
+            workspace. Your saved records are safe.
           </p>
           <button
             className="btn-primary mt-6 w-full"

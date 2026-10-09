@@ -32,9 +32,7 @@ export function normalizeAnswers(value) {
 export function flattenLeads(leads) {
   const questions = [
     ...new Set(
-      leads.flatMap((lead) =>
-        normalizeAnswers(lead.answers).map((a) => a.question),
-      ),
+      leads.flatMap((lead) => normalizeAnswers(lead.answers).map((a) => a.question)),
     ),
   ];
   const headers = [

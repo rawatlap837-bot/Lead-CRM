@@ -29,8 +29,8 @@ export function weekStart(value = todayIST()) {
   return key(startOfWeek(calendar(value), { weekStartsOn: 1 }));
 }
 export function rangeFor(period, value = todayIST()) {
-  let start = value.slice(0, 10),
-    end;
+  let start = value.slice(0, 10);
+  let end;
   if (period === "week") {
     start = weekStart(start);
     end = key(addDays(calendar(start), 7));
@@ -98,9 +98,6 @@ export function weekInput(value) {
 export function dateFromWeek(value) {
   const [year, week] = value.split("-W").map(Number);
   return key(
-    addDays(
-      startOfWeek(calendar(`${year}-01-04`), { weekStartsOn: 1 }),
-      (week - 1) * 7,
-    ),
+    addDays(startOfWeek(calendar(`${year}-01-04`), { weekStartsOn: 1 }), (week - 1) * 7),
   );
 }

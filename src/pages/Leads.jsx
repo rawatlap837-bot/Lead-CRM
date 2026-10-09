@@ -1,14 +1,11 @@
-import FileData from '../components/FileData';
-import ImportLeads from '../components/ImportLeads';
+import { sourceName } from "../lib/personalWorkspace";
+import { fetchPageNames } from "../lib/pageNames";
+import FileData from "../components/FileData";
+import PageName from "../components/PageName";
+import ImportLeads from "../components/ImportLeads";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  Plus,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpRight,
-} from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, ArrowUpRight } from "lucide-react";
 import {
   fetchLeads,
   saveLead,
@@ -28,20 +25,25 @@ import Spinner from "../components/Spinner";
 import LoadError from "../components/LoadError";
 import EmptyState from "../components/EmptyState";
 import Avatar from "../components/Avatar";
-import useAutoRefresh from '../lib/useAutoRefresh';
+import useAutoRefresh from "../lib/useAutoRefresh";
+import { useAuth } from "../context/auth-state";
 export default function Leads() {
-  const [importOpen,setImportOpen]=useState(false);
-  const [fileVersion,setFileVersion]=useState(0);
-  const [params, setParams] = useSearchParams(),
-    [modal, setModal] = useState(params.get("add") === "1"),
-    [search, setSearch] = useState(""),
-    [debounced, setDebounced] = useState(""),
-    [status, setStatus] = useState(""),
-    [source, setSource] = useState(params.get("source") || ""),
-    [page, setPage] = useState(0),
-    [busy, setBusy] = useState(null),
-    [saving, setSaving] = useState(false),
-    toast = useToast();
+  const { access } = useAuth();
+  const canCreate = Boolean(access?.is_admin || access?.sources?.length);
+  const { data: pageNames, reload: reloadNames } = useLoad(fetchPageNames, []);
+  const [importOpen, setImportOpen] = useState(false);
+  const [fileVersion, setFileVersion] = useState(0);
+  const [params, setParams] = useSearchParams();
+  const [modal, setModal] = useState(params.get("add") === "1");
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [status, setStatus] = useState("");
+  const [source, setSource] = useState(params.get("source") || "");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [busy, setBusy] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
   useEffect(() => {
     if (params.get("add") === "1") setModal(true);
   }, [params]);
@@ -53,12 +55,20 @@ export default function Leads() {
     return () => clearTimeout(timer);
   }, [search]);
   const { data, loading, error, reload } = useLoad(
-    () => fetchLeads({ search: debounced, status, source, page }),
-    [debounced, status, source, page],
+    () => fetchLeads({ search: debounced, status, source, page, pageSize }),
+    [debounced, status, source, page, pageSize],
   );
-  const { data: sourceOptions, reload: reloadSources } = useLoad(() => fetchLeadSources(), []);
-  const sources = sourceOptions || [];
-  const { data: sourceStatsData, reload: reloadStats } = useLoad(() => fetchLeadSourceStats(), []);
+  const { data: sourceOptions, reload: reloadSources } = useLoad(
+    () => fetchLeadSources(),
+    [],
+  );
+  const sources = [
+    ...new Set([...(sourceOptions || []), ...(access?.sources || [])]),
+  ].sort((a, b) => a.localeCompare(b));
+  const { data: sourceStatsData, reload: reloadStats } = useLoad(
+    () => fetchLeadSourceStats(),
+    [],
+  );
   const sourceStats = sourceStatsData || {};
   const activeStats = source
     ? sourceStats[source] || { total: 0, new: 0, converted: 0 }
@@ -73,8 +83,8 @@ export default function Leads() {
   useAutoRefresh(reload);
   useEffect(() => {
     if (data && page > 0 && !data.data.length)
-      setPage(Math.max(0, Math.ceil(data.count / 25) - 1));
-  }, [data, page]);
+      setPage(Math.max(0, Math.ceil(data.count / pageSize) - 1));
+  }, [data, page, pageSize]);
   function close() {
     setModal(false);
     setParams({}, { replace: true });
@@ -86,6 +96,7 @@ export default function Leads() {
       close();
       if (page !== 0) setPage(0);
       else await reload();
+      await Promise.all([reloadSources(), reloadStats()]);
     } catch (issue) {
       toast(issue.message);
       throw issue;
@@ -96,7 +107,7 @@ export default function Leads() {
     try {
       await changeStatus(id, value);
       toast("Status updated.", "success");
-      await reload();
+      await Promise.all([reload(), reloadStats()]);
     } catch (issue) {
       toast(issue.message);
     } finally {
@@ -105,35 +116,73 @@ export default function Leads() {
   }
   return (
     <>
-      <PageHeader
-        title="Leads"
-        description="All your opportunities, in one place."
-      >
-        <button className="btn-secondary" onClick={()=>setImportOpen(true)}>Import Excel</button>
-        <button className="btn-primary" onClick={() => setModal(true)}>
-          <Plus size={17} />
-          Add lead
-        </button>
+      <PageHeader title="Leads" description="All your opportunities, in one place.">
+        {canCreate && (
+          <button className="btn-secondary" onClick={() => setImportOpen(true)}>
+            Import Excel
+          </button>
+        )}
+        {canCreate && (
+          <button className="btn-primary" onClick={() => setModal(true)}>
+            <Plus size={17} />
+            Add lead
+          </button>
+        )}
       </PageHeader>
       <section className="card">
         <div className="border-b border-slate-100 px-5 pt-4">
-          <div role="tablist" aria-label="Landing page lead dashboards" className="flex gap-2 overflow-x-auto pb-3">
-            {[{ name: "", label: "All leads", total: Object.values(sourceStats).reduce((n, item) => n + item.total, 0) }, ...sources.map((name) => ({ name, label: name, total: sourceStats[name]?.total || 0 }))].map((tab) => (
+          <div
+            role="tablist"
+            aria-label="Landing page lead dashboards"
+            className="flex gap-2 overflow-x-auto pb-3"
+          >
+            {[
+              {
+                name: "",
+                label: "All leads",
+                total: Object.values(sourceStats).reduce((n, item) => n + item.total, 0),
+              },
+              ...sources.map((name) => ({
+                name,
+                label: sourceName(name, pageNames, access?.personal_source),
+                total: sourceStats[name]?.total || 0,
+              })),
+            ].map((tab) => (
               <button
                 key={tab.name || "all"}
                 type="button"
                 role="tab"
                 aria-selected={source === tab.name}
                 className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition ${source === tab.name ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"}`}
-                onClick={() => { setSource(tab.name); setPage(0); }}
+                onClick={() => {
+                  setSource(tab.name);
+                  setPage(0);
+                }}
               >
-                {tab.label}<span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">{tab.total}</span>
+                {tab.label}
+                <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">
+                  {tab.total}
+                </span>
               </button>
             ))}
           </div>
+          {source && (access?.is_admin || access?.sources?.includes(source)) && (
+            <div className="pb-4">
+              <PageName
+                key={source}
+                source={source}
+                name={sourceName(source, pageNames, access?.personal_source)}
+                onSaved={reloadNames}
+              />
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-1 gap-3 border-b border-slate-100 p-4 sm:grid-cols-3">
-          {[ ["Leads", activeStats.total], ["New", activeStats.new], ["Converted", activeStats.converted] ].map(([label, value]) => (
+          {[
+            ["Leads", activeStats.total],
+            ["New", activeStats.new],
+            ["Converted", activeStats.converted],
+          ].map(([label, value]) => (
             <div key={label} className="rounded-xl bg-slate-50 px-4 py-3">
               <p className="text-xs font-medium text-slate-500">{label}</p>
               <p className="mt-1 text-xl font-bold text-slate-900">{value}</p>
@@ -143,10 +192,7 @@ export default function Leads() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 p-5">
           <label className="relative w-full max-w-sm">
             <span className="sr-only">Search leads</span>
-            <Search
-              className="absolute left-3 top-3 text-slate-400"
-              size={17}
-            />
+            <Search className="absolute left-3 top-3 text-slate-400" size={17} />
             <input
               className="input !pl-10"
               value={search}
@@ -155,6 +201,24 @@ export default function Leads() {
             />
           </label>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+            <label className="flex items-center gap-3 text-xs text-slate-500">
+              Rows per page
+              <select
+                aria-label="Leads per page"
+                className="input sm:!w-auto"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(0);
+                }}
+              >
+                {[10, 25, 50, 100].map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex items-center gap-3 text-xs text-slate-500">
               Status
               <select
@@ -186,6 +250,7 @@ export default function Leads() {
                 <thead>
                   <tr>
                     {[
+                      "No.",
                       "Name",
                       "Phone",
                       "Email",
@@ -199,8 +264,9 @@ export default function Leads() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.data.map((lead) => (
+                  {data.data.map((lead, index) => (
                     <tr key={lead.id}>
+                      <td data-label="No.">{page * pageSize + index + 1}</td>
                       <td data-label="Name">
                         <Link
                           className="flex items-center gap-3 font-semibold hover:text-indigo-600"
@@ -211,10 +277,7 @@ export default function Leads() {
                         </Link>
                       </td>
                       <td data-label="Phone">
-                        <a
-                          className="hover:text-indigo-600"
-                          href={`tel:${lead.phone}`}
-                        >
+                        <a className="hover:text-indigo-600" href={`tel:${lead.phone}`}>
                           {lead.phone}
                         </a>
                       </td>
@@ -229,7 +292,9 @@ export default function Leads() {
                           label={`Status for ${lead.name}`}
                         />
                       </td>
-                      <td data-label="Source">{lead.source || "—"}</td>
+                      <td data-label="Source">
+                        {pageNames?.[lead.source] || lead.source || "—"}
+                      </td>
                       <td
                         data-label="Created date"
                         className="whitespace-nowrap text-slate-500"
@@ -251,8 +316,8 @@ export default function Leads() {
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-slate-100 px-5 py-4 text-xs text-slate-500">
               <span>
-                Showing {page * 25 + 1}–{Math.min((page + 1) * 25, data.count)}{" "}
-                of {data.count} leads
+                Showing {page * pageSize + 1}–
+                {Math.min((page + 1) * pageSize, data.count)} of {data.count} leads
               </span>
               <div className="flex items-center gap-3">
                 <button
@@ -264,12 +329,12 @@ export default function Leads() {
                   <ChevronLeft size={16} />
                 </button>
                 <span>
-                  Page {page + 1} of {Math.max(1, Math.ceil(data.count / 25))}
+                  Page {page + 1} of {Math.max(1, Math.ceil(data.count / pageSize))}
                 </span>
                 <button
                   aria-label="Next page"
                   className="btn-secondary !p-2"
-                  disabled={(page + 1) * 25 >= data.count}
+                  disabled={(page + 1) * pageSize >= data.count}
                   onClick={() => setPage(page + 1)}
                 >
                   <ChevronRight size={16} />
@@ -287,16 +352,41 @@ export default function Leads() {
             description={
               search || status || source
                 ? "Try another search or status filter."
-                : "Add your first lead and keep every conversation organized."
+                : canCreate
+                  ? "Add your first lead and keep every conversation organized."
+                  : "Your workspace starts empty. Leads appear when your administrator shares a landing page with your email."
             }
           />
         )}
       </section>
-      <FileData key={source} source={source} version={fileVersion}/>
-      {importOpen && <Modal title="Import leads into a landing page" busy={saving} onClose={()=>setImportOpen(false)}><ImportLeads sources={sources} defaultSource={source} onBusyChange={setSaving} onImported={async selected=>{setFileVersion(v=>v+1);setSource(selected);setPage(0);await Promise.all([reload(),reloadSources(),reloadStats()]);}}/></Modal>}
-      {modal && (
+      <FileData key={source} source={source} version={fileVersion} />
+      {importOpen && (
+        <Modal
+          title="Import leads into a landing page"
+          busy={saving}
+          onClose={() => setImportOpen(false)}
+        >
+          <ImportLeads
+            sources={sources}
+            defaultSource={source}
+            onBusyChange={setSaving}
+            onImported={async (selected) => {
+              setFileVersion((v) => v + 1);
+              setSource(selected);
+              setPage(0);
+              await Promise.all([reload(), reloadSources(), reloadStats()]);
+            }}
+          />
+        </Modal>
+      )}
+      {modal && canCreate && (
         <Modal title="Add a new lead" onClose={close} busy={saving}>
-          <LeadForm defaultSource={source} onSave={add} onCancel={close} onBusyChange={setSaving} />
+          <LeadForm
+            defaultSource={source}
+            onSave={add}
+            onCancel={close}
+            onBusyChange={setSaving}
+          />
         </Modal>
       )}
     </>

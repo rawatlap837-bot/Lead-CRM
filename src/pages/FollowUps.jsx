@@ -16,7 +16,7 @@ import EmptyState from "../components/EmptyState";
 import Spinner from "../components/Spinner";
 import Modal from "../components/Modal";
 import LoadError from "../components/LoadError";
-import useAutoRefresh from '../lib/useAutoRefresh';
+import useAutoRefresh from "../lib/useAutoRefresh";
 const tabs = [
   ["overdue", "Overdue"],
   ["today", "Due today"],
@@ -24,13 +24,13 @@ const tabs = [
   ["done", "Done"],
 ];
 export default function FollowUps() {
-  const today = todayIST(),
-    [tab, setTab] = useState("today"),
-    [reschedule, setReschedule] = useState(null),
-    [busy, setBusy] = useState(null),
-    [saving, setSaving] = useState(false),
-    toast = useToast(),
-    { data, loading, error, reload } = useLoad(() => fetchFollowups(), [today]);
+  const today = todayIST();
+  const [tab, setTab] = useState("today");
+  const [reschedule, setReschedule] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const { data, loading, error, reload } = useLoad(() => fetchFollowups(), [today]);
   useAutoRefresh(reload);
   async function done(id) {
     setBusy(id);
@@ -56,14 +56,11 @@ export default function FollowUps() {
       await reload();
     }
   }
-  const items = (data || []).filter(
-      (item) => followupGroup(item, today) === tab,
-    ),
-    unscheduled = (data || []).filter(
-      (item) => followupGroup(item, today) === "unscheduled",
-    );
-  if (tab === "done")
-    items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const items = (data || []).filter((item) => followupGroup(item, today) === tab);
+  const unscheduled = (data || []).filter(
+    (item) => followupGroup(item, today) === "unscheduled",
+  );
+  if (tab === "done") items.sort((a, b) => b.created_at.localeCompare(a.created_at));
   return (
     <>
       <PageHeader
@@ -72,8 +69,8 @@ export default function FollowUps() {
       />
       {unscheduled.length > 0 && (
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          {unscheduled.length} pending follow-up(s) have no reconnect date. Open
-          the lead to add a scheduled follow-up:{" "}
+          {unscheduled.length} pending follow-up(s) have no reconnect date. Open the lead
+          to add a scheduled follow-up:{" "}
           {unscheduled.map((item, i) => (
             <span key={item.id}>
               {i > 0 && ", "}
@@ -103,8 +100,7 @@ export default function FollowUps() {
                 className={`rounded-md px-1.5 py-0.5 text-[10px] ${key === tab ? "bg-indigo-50" : "bg-slate-100"}`}
               >
                 {data
-                  ? data.filter((item) => followupGroup(item, today) === key)
-                      .length
+                  ? data.filter((item) => followupGroup(item, today) === key).length
                   : "—"}
               </span>
             </button>
@@ -235,8 +231,8 @@ export default function FollowUps() {
           busy={saving}
         >
           <p className="mb-5 text-sm text-slate-500">
-            Create a new follow-up and mark the previous one done. Your
-            conversation history stays intact.
+            Create a new follow-up and mark the previous one done. Your conversation
+            history stays intact.
           </p>
           <FollowupForm
             reschedule

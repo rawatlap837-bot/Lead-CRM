@@ -1,3 +1,4 @@
+import { sourceName } from "../lib/personalWorkspace";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -31,20 +32,17 @@ import Spinner from "../components/Spinner";
 import EmptyState from "../components/EmptyState";
 import LoadError from "../components/LoadError";
 import Avatar from "../components/Avatar";
-import useAutoRefresh from '../lib/useAutoRefresh';
+import useAutoRefresh from "../lib/useAutoRefresh";
 export default function LeadDetail() {
-  const { id } = useParams(),
-    navigate = useNavigate(),
-    toast = useToast(),
-    [edit, setEdit] = useState(false),
-    [confirm, setConfirm] = useState(false),
-    [busy, setBusy] = useState(null);
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [edit, setEdit] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(null);
   const [saving, setSaving] = useState(false);
   const { data, loading, error, reload } = useLoad(async () => {
-    const [lead, history] = await Promise.all([
-      fetchLead(id),
-      fetchFollowups(id),
-    ]);
+    const [lead, history] = await Promise.all([fetchLead(id), fetchFollowups(id)]);
     return { lead, history };
   }, [id]);
   useAutoRefresh(reload);
@@ -97,8 +95,8 @@ export default function LeadDetail() {
   if (loading && !data) return <Spinner full />;
   if (error) return <LoadError error={error} reload={reload} />;
   if (!data) return null;
-  const { lead, history } = data,
-    answers = normalizeAnswers(lead.answers);
+  const { lead, history } = data;
+  const answers = normalizeAnswers(lead.answers);
   return (
     <>
       <Link
@@ -116,10 +114,7 @@ export default function LeadDetail() {
           <Pencil size={15} />
           Edit lead
         </button>
-        <button
-          className="btn-secondary !text-rose-600"
-          onClick={() => setConfirm(true)}
-        >
+        <button className="btn-secondary !text-rose-600" onClick={() => setConfirm(true)}>
           <Trash2 size={15} />
           Delete
         </button>
@@ -131,17 +126,14 @@ export default function LeadDetail() {
             <div className="min-w-0">
               <h2 className="break-words text-xl font-bold">{lead.name}</h2>
               <p className="mt-1 text-xs text-slate-400">
-                Added {displayDate(lead.created_at)} ·{" "}
-                {lead.source || "No source"}
+                Added {displayDate(lead.created_at)} · {sourceName(lead.source)}
               </p>
             </div>
           </div>
           <StatusSelect
             value={lead.status}
             disabled={busy === "status"}
-            onChange={(value) =>
-              action("status", () => changeStatus(id, value))
-            }
+            onChange={(value) => action("status", () => changeStatus(id, value))}
           />
         </div>
         <div className="contact-actions mt-5 flex flex-wrap gap-3">
@@ -202,19 +194,14 @@ export default function LeadDetail() {
             {history.length ? (
               <div className="mt-5 space-y-4">
                 {history.map((item) => (
-                  <div
-                    className="rounded-xl border border-slate-100 p-4"
-                    key={item.id}
-                  >
+                  <div className="rounded-xl border border-slate-100 p-4" key={item.id}>
                     <div className="mb-3 flex items-center justify-between">
                       <StatusBadge status={item.status} />
                       {item.status !== "done" && (
                         <button
                           className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600"
                           disabled={busy === item.id}
-                          onClick={() =>
-                            action(item.id, () => markDone(item.id))
-                          }
+                          onClick={() => action(item.id, () => markDone(item.id))}
                         >
                           <Check size={14} />
                           {busy === item.id ? "Saving…" : "Mark done"}
@@ -271,8 +258,7 @@ export default function LeadDetail() {
           onClose={() => setConfirm(false)}
         >
           <p className="text-sm leading-6 text-slate-500">
-            This will permanently delete {lead.name} and all their follow-up
-            history.
+            This will permanently delete {lead.name} and all their follow-up history.
           </p>
           <div className="mt-6 flex justify-end gap-3">
             <button

@@ -3,10 +3,11 @@
 @tailwind utilities;
 @layer base {
   body {
-    @apply m-0 font-sans text-slate-800 antialiased;
+    @apply m-0 bg-slate-50 font-sans text-slate-800 antialiased;
   }
   html {
     -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
   }
   #root {
     min-height: 100dvh;
@@ -18,6 +19,11 @@
   select,
   textarea {
     min-width: 0;
+  }
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
   button,
   a,
@@ -44,10 +50,11 @@
 }
 @layer components {
   .card {
-    @apply min-w-0 overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm;
+    @apply min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white;
+    box-shadow: 0 3px 16px -10px rgb(15 23 42 / 0.18);
   }
   .btn-primary {
-    @apply inline-flex min-h-11 max-w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50;
+    @apply inline-flex min-h-11 max-w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50;
   }
   .btn-secondary {
     @apply inline-flex min-h-11 max-w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50;
@@ -61,13 +68,88 @@
   .section-heading {
     @apply text-sm font-semibold text-slate-900;
   }
+  .workspace-sidebar {
+    @apply border-slate-800 bg-slate-950 text-white;
+  }
+  .workspace-sidebar .nav-link {
+    @apply text-slate-400 hover:bg-white/5 hover:text-white;
+  }
+  .workspace-sidebar .nav-link.active {
+    @apply bg-indigo-500 text-white shadow-lg shadow-indigo-950/30;
+  }
+  .workspace-sidebar .sidebar-tip {
+    @apply border-white/10 bg-white/5;
+  }
+  .workspace-sidebar .sidebar-tip p {
+    @apply text-slate-400;
+  }
+  .workspace-sidebar .sidebar-tip a,
+  .workspace-sidebar .sidebar-tip span {
+    @apply text-indigo-200;
+  }
+  .workspace-sidebar .account-divider {
+    @apply border-white/10;
+  }
+  .workspace-sidebar .logout-button {
+    @apply text-slate-400 hover:bg-white/5 hover:text-white;
+  }
+  .dashboard-hero {
+    background:
+      radial-gradient(ellipse at top right, #4338ca 0%, transparent 65%), #0f172a;
+  }
+  .login-story {
+    background:
+      radial-gradient(ellipse at top left, #4338ca 0%, transparent 70%), #0f172a;
+  }
+  .mobile-header {
+    height: calc(4rem + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .workspace-content {
+    padding-top: calc(4rem + env(safe-area-inset-top, 0px));
+  }
+}
+@media (min-width: 1024px) {
+  .workspace-content {
+    padding-top: 0;
+  }
 }
 @media (max-width: 767px) {
+  .modal-backdrop {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  }
+  .modal-backdrop [role="dialog"] {
+    max-height: calc(
+      100dvh - 1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+    );
+    scroll-padding-bottom: 1rem;
+  }
+  #main-content {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  }
+  .workspace-sidebar {
+    padding-top: max(1rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+  .report-date-filter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .report-date-filter > .filter-caption {
+    grid-column: 1 / -1;
+  }
+  .report-date-filter > .input {
+    width: 100%;
+  }
   .page-actions {
     width: 100%;
   }
   .page-actions > * {
-    flex: 1 1 auto;
+    flex: 1 1 8rem;
+    min-width: 0;
   }
   .responsive-table {
     display: block;
@@ -131,6 +213,21 @@
   }
   .responsive-table select {
     width: 100% !important;
+  }
+  .responsive-table textarea {
+    overflow-wrap: anywhere;
+  }
+  .responsive-table td[data-label="Actions"] > button {
+    width: 100%;
+  }
+  .file-pagination {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .file-pagination > span {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    text-align: center;
   }
   .contact-actions {
     display: grid;

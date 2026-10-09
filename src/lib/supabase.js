@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { normalizeSupabaseUrl } from "./config";
-let url = "",
-  configError = "";
+let url = "";
+let configError = "";
 try {
   url = normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL);
 } catch {
@@ -17,5 +17,4 @@ export const supabase = isConfigured
     ? previous.client
     : createClient(url, key)
   : null;
-if (import.meta.hot)
-  import.meta.hot.data.client = { url, key, client: supabase };
+if (import.meta.hot) import.meta.hot.data.client = { url, key, client: supabase };

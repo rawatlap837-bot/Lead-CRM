@@ -6,9 +6,7 @@ try {
   const url = normalizeSupabaseUrl(env.VITE_SUPABASE_URL);
   const key = env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key)
-    throw new Error(
-      "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env first.",
-    );
+    throw new Error("Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env first.");
   const response = await fetch(`${url}/auth/v1/settings`, {
     headers: { apikey: key },
     signal: AbortSignal.timeout(15000),
@@ -23,13 +21,16 @@ try {
     `Email authentication: ${settings.external?.email ? "enabled" : "disabled"}`,
   );
   console.log(
-    `Public signup: ${settings.disable_signup ? "disabled" : "enabled"}`,
+    `Google authentication: ${settings.external?.google ? "enabled" : "disabled"}`,
   );
+  console.log(`Public signup: ${settings.disable_signup ? "disabled" : "enabled"}`);
   console.log(
     `Email confirmation required: ${settings.mailer_autoconfirm ? "no" : "yes"}`,
   );
   console.log(
-    "Next: create your project Auth user in Authentication > Users, then sign in to the CRM.",
+    settings.external?.google
+      ? "Next: use Continue with Google in the CRM to verify the OAuth redirect and workspace access."
+      : "Next: enable Google in Supabase Authentication > Sign In / Providers. See GOOGLE_LOGIN_SETUP.md.",
   );
 } catch (error) {
   console.error(`Supabase check failed: ${error.message}`);

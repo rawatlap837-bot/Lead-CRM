@@ -1,3 +1,4 @@
+import { sourceName } from "../lib/personalWorkspace";
 import { Link } from "react-router-dom";
 import {
   Users,
@@ -18,10 +19,14 @@ import EmptyState from "../components/EmptyState";
 import Spinner from "../components/Spinner";
 import LoadError from "../components/LoadError";
 import Avatar from "../components/Avatar";
-import useAutoRefresh from '../lib/useAutoRefresh';
+import useAutoRefresh from "../lib/useAutoRefresh";
+import { useAuth } from "../context/auth-state";
 export default function Dashboard() {
-  const today = todayIST(),
-    { data, loading, error, reload } = useLoad(fetchDashboard, [today]);
+  const { access, session } = useAuth();
+  const canCreate = Boolean(access?.is_admin || access?.sources?.length);
+  const name = session?.user?.user_metadata?.full_name?.split(" ")[0];
+  const today = todayIST();
+  const { data, loading, error, reload } = useLoad(fetchDashboard, [today]);
   useAutoRefresh(reload);
   return (
     <>
@@ -30,10 +35,12 @@ export default function Dashboard() {
         title="Dashboard"
         description="Your leads and next conversations at a glance."
       >
-        <Link className="btn-primary" to="/leads?add=1">
-          <Plus size={17} />
-          Add lead
-        </Link>
+        {canCreate && (
+          <Link className="btn-primary" to="/leads?add=1">
+            <Plus size={17} />
+            Add lead
+          </Link>
+        )}
       </PageHeader>
       {loading ? (
         <Spinner />
@@ -41,22 +48,34 @@ export default function Dashboard() {
         <LoadError error={error} reload={reload} />
       ) : (
         <>
+          <section className="dashboard-hero mb-6 flex flex-wrap items-center justify-between gap-6 rounded-2xl p-6 text-white sm:p-8">
+            <div className="max-w-xl">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-indigo-200">
+                Creative crew / Overview
+              </p>
+              <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                {canCreate
+                  ? `Make your next move${name ? `, ${name}` : ""}.`
+                  : "Welcome to your workspace."}
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                {canCreate
+                  ? `${data.due} follow-ups due today. Keep your pipeline moving, one conversation at a time.`
+                  : "Your workspace is ready and starts empty. Landing pages and leads will appear when your administrator shares access with your email."}
+              </p>
+            </div>
+            <Link
+              className="btn-secondary !border-white/20 !bg-white/10 !text-white hover:!bg-white/20"
+              to={canCreate ? "/followups" : "/integrations"}
+            >
+              {canCreate ? "Plan your follow-ups" : "View my landing pages"}{" "}
+              <ArrowRight size={16} />
+            </Link>
+          </section>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 sm:gap-4">
             {[
-              [
-                "Total leads",
-                data.total,
-                Users,
-                "indigo",
-                "All your opportunities",
-              ],
-              [
-                "New leads today",
-                data.newToday,
-                UserPlus,
-                "blue",
-                "Added today · IST",
-              ],
+              ["Total leads", data.total, Users, "indigo", "All your opportunities"],
+              ["New leads today", data.newToday, UserPlus, "blue", "Added today · IST"],
               [
                 "Follow-ups due today",
                 data.due,
@@ -138,11 +157,9 @@ export default function Dashboard() {
                     >
                       <Avatar name={lead.name} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">
-                          {lead.name}
-                        </p>
+                        <p className="truncate text-sm font-semibold">{lead.name}</p>
                         <p className="mt-1 text-xs text-slate-400">
-                          {lead.source || "Manual"} ·{" "}
+                          {sourceName(lead.source, {}, access?.personal_source)} ·{" "}
                           {displayDate(lead.created_at)}
                         </p>
                       </div>
@@ -153,11 +170,17 @@ export default function Dashboard() {
               ) : (
                 <EmptyState
                   title="Meet your next opportunity"
-                  description="Add your first lead to start building stronger relationships."
+                  description={
+                    canCreate
+                      ? "Add your first lead to start building stronger relationships."
+                      : "Leads will appear here once a landing page is shared with you."
+                  }
                   action={
-                    <Link className="btn-primary" to="/leads?add=1">
-                      Add your first lead
-                    </Link>
+                    canCreate && (
+                      <Link className="btn-primary" to="/leads?add=1">
+                        Add your first lead
+                      </Link>
+                    )
                   }
                 />
               )}

@@ -26,15 +26,9 @@ before(async () => {
     const values = body ? JSON.parse(body) : null;
     requests.push({ method: req.method, url, values, headers: req.headers });
     res.setHeader("Content-Type", "application/json");
-    if (
-      req.method === "PATCH" &&
-      url.pathname.endsWith("/leads") &&
-      failStatus
-    ) {
+    if (req.method === "PATCH" && url.pathname.endsWith("/leads") && failStatus) {
       res.statusCode = 403;
-      res.end(
-        JSON.stringify({ message: "Status update denied", code: "42501" }),
-      );
+      res.end(JSON.stringify({ message: "Status update denied", code: "42501" }));
       return;
     }
     if (req.method === "POST" && values?.phone === "duplicate") {
@@ -54,9 +48,7 @@ before(async () => {
     );
     res.end(
       JSON.stringify(
-        url.pathname.endsWith("/followups")
-          ? []
-          : fixtures.slice(offset, offset + limit),
+        url.pathname.endsWith("/followups") ? [] : fixtures.slice(offset, offset + limit),
       ),
     );
   });
@@ -110,10 +102,7 @@ test("reports fetch all 1001 rows with timezone boundaries in two batches", asyn
     `gte.${range.from}`,
     `lt.${range.to}`,
   ]);
-  assert.equal(
-    requests[0].url.searchParams.get("order"),
-    "created_at.desc,id.asc",
-  );
+  assert.equal(requests[0].url.searchParams.get("order"), "created_at.desc,id.asc");
 });
 test("follow-up query includes the required lead join", async () => {
   requests = [];

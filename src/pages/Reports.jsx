@@ -1,11 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  FileSpreadsheet,
-  FileDown,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { FileSpreadsheet, FileDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { fetchReport, STATUSES, statusLabel } from "../lib/leads";
 import { todayIST, rangeFor, displayDate, weekStart } from "../lib/dates";
 import { validDate } from "../lib/validation";
@@ -18,16 +13,16 @@ import Spinner from "../components/Spinner";
 import LoadError from "../components/LoadError";
 import EmptyState from "../components/EmptyState";
 export default function Reports() {
-  const [period, setPeriod] = useState("month"),
-    [value, setValue] = useState(todayIST()),
-    [page, setPage] = useState(0),
-    [busy, setBusy] = useState(""),
-    toast = useToast();
-  const range = useMemo(() => rangeFor(period, value), [period, value]),
-    { data, loading, error, reload } = useLoad(
-      () => fetchReport(range),
-      [range.from, range.to],
-    );
+  const [period, setPeriod] = useState("month");
+  const [value, setValue] = useState(todayIST());
+  const [page, setPage] = useState(0);
+  const [busy, setBusy] = useState("");
+  const toast = useToast();
+  const range = useMemo(() => rangeFor(period, value), [period, value]);
+  const { data, loading, error, reload } = useLoad(
+    () => fetchReport(range),
+    [range.from, range.to],
+  );
   const flattened = useMemo(() => flattenLeads(data || []), [data]);
   function choosePeriod(next) {
     setPeriod(next);
@@ -37,11 +32,7 @@ export default function Reports() {
   function chooseValue(next) {
     if (next) {
       const date =
-        period === "month"
-          ? `${next}-01`
-          : period === "year"
-            ? `${next}-01-01`
-            : next;
+        period === "month" ? `${next}-01` : period === "year" ? `${next}-01-01` : next;
       if (!validDate(date)) return;
       setValue(period === "week" ? weekStart(date) : date);
       setPage(0);
@@ -108,8 +99,8 @@ export default function Reports() {
             </button>
           ))}
         </div>
-        <label className="flex w-full flex-wrap items-center gap-3 text-xs text-slate-500 sm:w-auto">
-          Select {period}
+        <label className="report-date-filter flex w-full flex-wrap items-center gap-3 text-xs text-slate-500 sm:w-auto">
+          <span className="filter-caption">Select {period}</span>
           {period === "year" ? (
             <select
               aria-label="Select year"
@@ -117,11 +108,9 @@ export default function Reports() {
               value={value.slice(0, 4)}
               onChange={(e) => chooseValue(e.target.value)}
             >
-              {Array.from({ length: 31 }, (_, i) => currentYear + 1 - i).map(
-                (y) => (
-                  <option key={y}>{y}</option>
-                ),
-              )}
+              {Array.from({ length: 31 }, (_, i) => currentYear + 1 - i).map((y) => (
+                <option key={y}>{y}</option>
+              ))}
             </select>
           ) : (
             <input
@@ -149,13 +138,13 @@ export default function Reports() {
         <LoadError error={error} reload={reload} />
       ) : (
         <>
-          <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-            <div className="rounded-xl bg-indigo-600 p-5 text-white">
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-xl bg-indigo-600 p-4 sm:p-5 text-white">
               <p className="text-xs text-indigo-100">Total leads</p>
               <p className="mt-3 text-3xl font-bold">{data.length}</p>
             </div>
             {STATUSES.map((status) => (
-              <div key={status} className="card p-5">
+              <div key={status} className="card p-4 sm:p-5">
                 <p className="text-xs text-slate-500">{statusLabel(status)}</p>
                 <p className="mt-3 text-3xl font-bold">
                   {data.filter((lead) => lead.status === status).length}
@@ -182,38 +171,36 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {flattened.rows
-                        .slice(page * 25, page * 25 + 25)
-                        .map((row, i) => (
-                          <tr key={data[page * 25 + i].id}>
-                            {row.map((cell, column) => (
-                              <td
-                                data-label={flattened.headers[column]}
-                                className={
-                                  column > 5
-                                    ? "min-w-48 max-w-xs whitespace-pre-wrap break-words"
-                                    : "whitespace-nowrap"
-                                }
-                                key={column}
-                              >
-                                {column === 0 ? (
-                                  <Link
-                                    className="font-semibold hover:text-indigo-600"
-                                    to={`/leads/${data[page * 25 + i].id}`}
-                                  >
-                                    {cell || "Unnamed lead"}
-                                  </Link>
-                                ) : column === 3 ? (
-                                  <StatusBadge status={cell} />
-                                ) : column === 5 ? (
-                                  displayDate(cell)
-                                ) : (
-                                  cell || "—"
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
+                      {flattened.rows.slice(page * 25, page * 25 + 25).map((row, i) => (
+                        <tr key={data[page * 25 + i].id}>
+                          {row.map((cell, column) => (
+                            <td
+                              data-label={flattened.headers[column]}
+                              className={
+                                column > 5
+                                  ? "min-w-48 max-w-xs whitespace-pre-wrap break-words"
+                                  : "whitespace-nowrap"
+                              }
+                              key={column}
+                            >
+                              {column === 0 ? (
+                                <Link
+                                  className="font-semibold hover:text-indigo-600"
+                                  to={`/leads/${data[page * 25 + i].id}`}
+                                >
+                                  {cell || "Unnamed lead"}
+                                </Link>
+                              ) : column === 3 ? (
+                                <StatusBadge status={cell} />
+                              ) : column === 5 ? (
+                                displayDate(cell)
+                              ) : (
+                                cell || "—"
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>

@@ -1,4 +1,4 @@
-import {fileSources,fileStats} from './flexibleImports';
+import { fileSources, fileStats } from "./flexibleImports";
 import { supabase } from "./supabase";
 import { rangeFor, todayIST } from "./dates";
 import { validDate, validateFollowup } from "./validation";
@@ -13,9 +13,7 @@ export const statusLabel = (value) =>
   })[value] || value;
 function client() {
   if (!supabase)
-    throw new Error(
-      "Add your Supabase URL and anon key to .env, then restart the app.",
-    );
+    throw new Error("Add your Supabase URL and anon key to .env, then restart the app.");
   return supabase;
 }
 async function result(query) {
@@ -41,8 +39,9 @@ function leadQuery(filters = {}) {
   if (filters.source) query = query.eq("source", filters.source);
   return query.order("created_at", { ascending: false }).order("id");
 }
-export async function fetchLeads({ page = 0, ...filters } = {}) {
-  return result(leadQuery(filters).range(page * 25, page * 25 + 24));
+export async function fetchLeads({ page = 0, pageSize = 25, ...filters } = {}) {
+  const size = [10, 25, 50, 100].includes(pageSize) ? pageSize : 25;
+  return result(leadQuery(filters).range(page * size, page * size + size - 1));
 }
 export async function fetchLeadSources() {
   const sources = new Set();
@@ -61,7 +60,7 @@ export async function fetchLeadSources() {
     });
     if (data.length < 1000) break;
   }
-  (await fileSources()).forEach(source=>sources.add(source));
+  (await fileSources()).forEach((source) => sources.add(source));
   return [...sources].sort((a, b) => a.localeCompare(b));
 }
 export async function fetchLeadSourceStats() {
@@ -83,34 +82,37 @@ export async function fetchLeadSourceStats() {
     });
     if (data.length < 1000) break;
   }
-  for(const [source,total] of Object.entries(await fileStats())){stats[source]??={total:0,new:0,converted:0};stats[source].total+=total;}
+  for (const [source, total] of Object.entries(await fileStats())) {
+    stats[source] ??= { total: 0, new: 0, converted: 0 };
+    stats[source].total += total;
+  }
   return stats;
 }
 export async function fetchLead(id) {
-  return (
-    await result(client().from("leads").select("*").eq("id", id).single())
-  ).data;
+  return (await result(client().from("leads").select("*").eq("id", id).single())).data;
 }
 export async function saveLead(values, id) {
   const query = id
     ? client().from("leads").update(values).eq("id", id)
     : client().from("leads").insert(values);
-  return (await result(query.select().single())).data;
+  const response = await query.select().single();
+  if (
+    response.error?.code === "42501" &&
+    values.source?.startsWith("Personal leads / ")
+  ) {
+    throw new Error(
+      "Personal workspace setup is required. Ask your administrator to run supabase/personal-workspaces.sql once.",
+    );
+  }
+  return (await result(response)).data;
 }
 export async function changeStatus(id, status) {
   await result(
-    client()
-      .from("leads")
-      .update({ status })
-      .eq("id", id)
-      .select("id")
-      .single(),
+    client().from("leads").update({ status }).eq("id", id).select("id").single(),
   );
 }
 export async function deleteLead(id) {
-  await result(
-    client().from("leads").delete().eq("id", id).select("id").single(),
-  );
+  await result(client().from("leads").delete().eq("id", id).select("id").single());
 }
 export async function fetchFollowups(leadId) {
   let query = client()
@@ -126,9 +128,7 @@ export async function fetchFollowups(leadId) {
     all.push(...data);
     if (data.length < 1000) break;
   }
-  return leadId
-    ? all.sort((a, b) => b.created_at.localeCompare(a.created_at))
-    : all;
+  return leadId ? all.sort((a, b) => b.created_at.localeCompare(a.created_at)) : all;
 }
 export async function markDone(id) {
   await result(
@@ -141,8 +141,7 @@ export async function markDone(id) {
   );
 }
 export async function addFollowup(values) {
-  if (!values.description?.trim())
-    throw new Error("Please enter a follow-up note.");
+  if (!values.description?.trim()) throw new Error("Please enter a follow-up note.");
   if (!values.reconnect_on || values.reconnect_on < todayIST())
     throw new Error("Reconnect date must be today or later.");
   const validation = validateFollowup(values);
@@ -198,8 +197,7 @@ export async function fetchReport(range) {
   return all;
 }
 export function followupGroup(item, today = todayIST()) {
-  if (item.status !== "done" && !validDate(item.reconnect_on))
-    return "unscheduled";
+  if (item.status !== "done" && !validDate(item.reconnect_on)) return "unscheduled";
   return item.status === "done"
     ? "done"
     : item.reconnect_on < today
@@ -211,8 +209,8 @@ export function followupGroup(item, today = todayIST()) {
           : "unscheduled";
 }
 export async function fetchDashboard() {
-  const today = todayIST(),
-    range = rangeFor("day", today);
+  const today = todayIST();
+  const range = rangeFor("day", today);
   const count = (query) => result(query).then((r) => r.count ?? 0);
   const leadCount = () =>
     client().from("leads").select("id", { head: true, count: "exact" });
@@ -221,33 +219,30 @@ export async function fetchDashboard() {
       .from("followups")
       .select("id", { head: true, count: "exact" })
       .eq("status", "pending");
-  const [total, newToday, due, overdue, converted, recent, dueList] =
-    await Promise.all([
-      count(leadCount()),
-      count(
-        leadCount().gte("created_at", range.from).lt("created_at", range.to),
-      ),
-      count(followCount().eq("reconnect_on", today)),
-      count(followCount().lt("reconnect_on", today)),
-      count(leadCount().eq("status", "converted")),
-      result(
-        client()
-          .from("leads")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(5),
-      ),
-      result(
-        client()
-          .from("followups")
-          .select("*, leads(id,name,phone,email)")
-          .eq("status", "pending")
-          .eq("reconnect_on", today)
-          .order("reconnect_on")
-          .order("created_at")
-          .limit(5),
-      ),
-    ]);
+  const [total, newToday, due, overdue, converted, recent, dueList] = await Promise.all([
+    count(leadCount()),
+    count(leadCount().gte("created_at", range.from).lt("created_at", range.to)),
+    count(followCount().eq("reconnect_on", today)),
+    count(followCount().lt("reconnect_on", today)),
+    count(leadCount().eq("status", "converted")),
+    result(
+      client()
+        .from("leads")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(5),
+    ),
+    result(
+      client()
+        .from("followups")
+        .select("*, leads(id,name,phone,email)")
+        .eq("status", "pending")
+        .eq("reconnect_on", today)
+        .order("reconnect_on")
+        .order("created_at")
+        .limit(5),
+    ),
+  ]);
   return {
     total,
     newToday,

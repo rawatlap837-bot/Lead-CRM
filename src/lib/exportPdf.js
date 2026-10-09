@@ -9,7 +9,7 @@ export function exportPdf(leads, period, range) {
   });
   const doc = new jsPDF({ orientation: "landscape" });
   doc.setFontSize(18);
-  doc.text("Leadspace · Lead report", 14, 17);
+  doc.text("Creative crew · Lead report", 14, 17);
   doc.setFontSize(10);
   doc.text(`${range.label} | ${TIMEZONE} | ${leads.length} leads`, 14, 25);
   autoTable(doc, {

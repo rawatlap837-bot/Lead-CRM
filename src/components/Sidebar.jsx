@@ -8,7 +8,6 @@ import {
   LogOut,
   Menu,
   X,
-  Layers,
   ArrowUpRight,
   Cable,
 } from "lucide-react";
@@ -16,26 +15,26 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/auth-state";
 import { useToast } from "../context/toast-state";
 import { displayDate, todayIST } from "../lib/dates";
+import ConnectionStatus from "./ConnectionStatus";
 const links = [
   ["/", "Dashboard", LayoutDashboard],
   ["/leads", "Leads", Users],
   ["/followups", "Follow-ups", CalendarClock],
   ["/reports", "Reports", ChartNoAxesCombined],
-  ['/integrations', 'Lead connections', Cable],
+  ["/integrations", "Lead connections", Cable],
 ];
 export default function Sidebar() {
-  const [open, setOpen] = useState(false),
-    [desktop, setDesktop] = useState(
-      () =>
-        typeof window !== "undefined" &&
-        window.matchMedia("(min-width: 1024px)").matches,
-    ),
-    [busy, setBusy] = useState(false),
-    { session, access } = useAuth(),
-    toast = useToast(),
-    location = useLocation();
-  const drawer = useRef(null),
-    menuButton = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [desktop, setDesktop] = useState(
+    () =>
+      typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
+  );
+  const [busy, setBusy] = useState(false);
+  const { session, access } = useAuth();
+  const toast = useToast();
+  const location = useLocation();
+  const drawer = useRef(null);
+  const menuButton = useRef(null);
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
@@ -53,16 +52,14 @@ export default function Sidebar() {
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const controls = () =>
-      [...drawer.current.querySelectorAll("a,button")].filter(
-        (el) => !el.disabled,
-      );
+      [...drawer.current.querySelectorAll("a,button")].filter((el) => !el.disabled);
     controls()[0]?.focus();
     const key = (event) => {
       if (event.key === "Escape") setOpen(false);
       if (event.key === "Tab") {
-        const list = controls(),
-          first = list[0],
-          last = list.at(-1);
+        const list = controls();
+        const first = list[0];
+        const last = list.at(-1);
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last?.focus();
@@ -92,7 +89,7 @@ export default function Sidebar() {
   }
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="fixed inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b bg-white px-5 lg:hidden">
+      <div className="mobile-header fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-white/10 bg-slate-950 px-4 text-white lg:hidden">
         <Brand />
         <button
           ref={menuButton}
@@ -120,7 +117,7 @@ export default function Sidebar() {
         aria-modal={!desktop && open ? true : undefined}
         aria-hidden={!desktop && !open}
         {...(!desktop && !open ? { inert: "" } : {})}
-        className={`fixed inset-y-0 left-0 z-40 flex w-[min(18rem,calc(100vw-2rem))] flex-col overflow-y-auto overscroll-contain border-r border-slate-200/70 bg-white p-5 transition-transform lg:w-60 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+        className={`workspace-sidebar fixed inset-y-0 left-0 z-40 flex w-[min(18rem,calc(100vw-1rem))] flex-col overflow-y-auto overscroll-contain border-r p-4 sm:p-5 transition-transform lg:w-64 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="mb-6 mt-1 flex shrink-0 items-center justify-between lg:mb-12 lg:mt-3">
           <Brand />
@@ -143,7 +140,7 @@ export default function Sidebar() {
               to={to}
               onClick={() => setOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors ${isActive ? "bg-indigo-50 text-indigo-600" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"}`
+                `nav-link flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors ${isActive ? "active" : ""}`
               }
             >
               <Icon size={19} />
@@ -152,7 +149,7 @@ export default function Sidebar() {
           ))}
         </nav>
         <div className="mt-auto pt-5">
-          <div className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50/70 p-4">
+          <div className="sidebar-tip mb-5 rounded-xl border p-4">
             <span className="mb-2 block text-xs font-bold text-indigo-700">
               Every conversation counts.
             </span>
@@ -167,19 +164,23 @@ export default function Sidebar() {
               View follow-ups <ArrowUpRight size={14} />
             </NavLink>
           </div>
-          <div className="flex items-center gap-3 border-t pt-5">
+          <div className="account-divider flex items-center gap-3 border-t pt-5">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-600">
               {session?.user.email?.slice(0, 1).toUpperCase() || "U"}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-xs font-semibold">
-                {session?.user.email}
+              <p className="truncate text-xs font-semibold">{session?.user.email}</p>
+              <p className="mt-1 text-[10px] text-slate-400">
+                {access?.is_admin
+                  ? "Administrator"
+                  : access?.sources?.length
+                    ? "Shared page workspace"
+                    : "New workspace"}
               </p>
-              <p className="mt-1 text-[10px] text-slate-400">{access?.is_admin ? "Administrator" : "Shared page workspace"}</p>
             </div>
           </div>
           <button
-            className="mt-4 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+            className="logout-button mt-4 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm"
             onClick={logout}
             disabled={busy}
           >
@@ -188,24 +189,26 @@ export default function Sidebar() {
           </button>
         </div>
       </aside>
-      <div className="min-w-0 pt-16 lg:ml-60 lg:pt-0">
+      <div className="workspace-content min-w-0 lg:ml-64">
         <header className="hidden h-20 items-center justify-between border-b border-slate-200/70 bg-white/80 px-8 lg:flex">
           <p className="text-sm text-slate-400">
             Workspace <span className="mx-3 text-slate-300">/</span>
             <span className="font-medium text-slate-700">
-              {links.find(([path]) => path === location.pathname)?.[1] ||
-                "Lead detail"}
+              {links.find(([path]) => path === location.pathname)?.[1] || "Lead detail"}
             </span>
           </p>
           <div className="flex items-center gap-3 text-xs text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
             {displayDate(todayIST())}
             <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold">
               IST
             </span>
           </div>
         </header>
-        <main className="mx-auto min-w-0 max-w-[1600px] p-4 pb-8 sm:p-6 lg:p-8">
+        <main
+          id="main-content"
+          className="mx-auto min-w-0 max-w-[1600px] p-4 pb-8 sm:p-6 lg:p-8"
+        >
+          <ConnectionStatus />
           <Outlet />
         </main>
       </div>
@@ -214,12 +217,16 @@ export default function Sidebar() {
 }
 export function Brand() {
   return (
-    <div className="flex items-center gap-2.5">
-      <span className="rounded-xl bg-indigo-600 p-2 text-white shadow-sm shadow-indigo-200">
-        <Layers size={21} />
+    <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+      <span className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-950 sm:h-12 sm:w-14">
+        <img
+          src="/cc.webp"
+          alt=""
+          className="h-12 w-12 max-w-none shrink-0 scale-110 object-contain sm:h-14 sm:w-14"
+        />
       </span>
-      <span className="text-xl font-bold tracking-tight">
-        leadspace<span className="text-indigo-600">.</span>
+      <span className="whitespace-nowrap text-base font-bold tracking-tight sm:text-lg">
+        Creative crew
       </span>
     </div>
   );
