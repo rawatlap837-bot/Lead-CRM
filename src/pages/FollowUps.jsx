@@ -1,3 +1,4 @@
+import UpdateIndicator from "../components/UpdateIndicator";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Phone, MessageCircle, Check, CalendarClock } from "lucide-react";
@@ -135,6 +136,7 @@ export default function FollowUps() {
                         to={`/leads/${item.lead_id}`}
                       >
                         {item.leads?.name || "Lead unavailable"}
+                        <UpdateIndicator entityId={item.lead_id} section="followups" />
                       </Link>
                       <p className="mt-1 text-xs text-slate-400">
                         {item.leads?.phone || "No phone"}

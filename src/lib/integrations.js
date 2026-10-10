@@ -14,7 +14,7 @@ export function parsePixelId(value) {
 }
 export function receiverUrl() {
   return supabase
-    ? `${supabase.supabaseUrl.replace(/\/$/, "")}/functions/v1/super-worker`
+    ? `${supabase.supabaseUrl.replace(/\/$/, "")}/functions/v1/lead-ingest`
     : "";
 }
 export function sqlEditorUrl() {

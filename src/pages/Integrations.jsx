@@ -1,3 +1,4 @@
+import UpdateIndicator from "../components/UpdateIndicator";
 import { sourceName } from "../lib/personalWorkspace";
 import PageName from "../components/PageName";
 import { fetchPageNames } from "../lib/pageNames";
@@ -8,6 +9,7 @@ import { Link } from "react-router-dom";
 import { CheckCircle2, Copy, RefreshCw, TableProperties } from "lucide-react";
 import { useToast } from "../context/toast-state";
 import { receiverUrl, checkReceiver } from "../lib/integrations";
+import { supabase, supabaseAnonKey } from "../lib/supabase";
 import { fetchLeadSourceStats } from "../lib/leads";
 import useLoad from "../lib/useLoad";
 import PageHeader from "../components/PageHeader";
@@ -26,6 +28,10 @@ export default function Integrations() {
   const [sheetLink, setSheetLink] = useState("");
   const [tabName, setTabName] = useState("Leads");
   const [preparedCode, setPreparedCode] = useState("");
+  const [sheetToken, setSheetToken] = useState("");
+  const [connectingSheet, setConnectingSheet] = useState(false);
+  const [sheetConnectionError, setSheetConnectionError] = useState("");
+  const [receiverStatus, setReceiverStatus] = useState("");
   function prepareConnection(event) {
     event.preventDefault();
     const match = sheetLink
@@ -35,27 +41,61 @@ export default function Integrations() {
       toast("Paste the Google Sheet link from your browser address bar.");
       return;
     }
-    if (!pageName.trim() || !tabName.trim()) {
-      toast("Enter a page name and the Sheet tab name.");
+    if (!tabName.trim()) {
+      toast("Enter the Sheet tab name.");
+      return;
+    }
+    if (!receiverUrl() || !supabaseAnonKey || !sheetToken) {
+      toast("Create a secure Sheet connection first.");
       return;
     }
     const settings = {
+      CRM_SHEET_ENDPOINT: receiverUrl() + "/sheet",
+      CRM_SHEET_ANON_KEY: supabaseAnonKey,
+      CRM_SHEET_TOKEN: sheetToken,
       CRM_SOURCE_SHEET_ID: match[1],
       CRM_SOURCE_SHEET_NAME: tabName.trim(),
-      CRM_LEAD_SOURCE: pageName.trim(),
-      CRM_LEAD_RECEIVER_URL: receiverUrl(),
+      CRM_LEAD_SOURCE: pageName.trim() || "My leads",
     };
-    if (!settings.CRM_LEAD_RECEIVER_URL) {
-      toast("Configure Supabase first.");
-      return;
-    }
     setPreparedCode(
-      sheetSyncCode +
-        "\n\nfunction setupThisLandingPage() {\n  PropertiesService.getScriptProperties().setProperties(" +
-        JSON.stringify(settings, null, 2) +
-        ");\n  installCrmSheetSync();\n}\n",
+      `${sheetSyncCode}\n\nfunction setupMyCrmSheet() {\n  PropertiesService.getScriptProperties().setProperties(${JSON.stringify(settings, null, 2)});\n  installCrmSheetSync();\n}\n`,
     );
     toast("Your connector is ready. Follow the three steps below.", "success");
+  }
+  async function createSheetConnection() {
+    if (connectingSheet) return;
+    if (
+      sheetToken &&
+      !window.confirm(
+        "Create a new token? Existing Google Sheets using this token will stop syncing until updated.",
+      )
+    )
+      return;
+    setConnectingSheet(true);
+    setSheetConnectionError("");
+    try {
+      if (!supabase)
+        throw new Error(
+          "CRM is not connected to Supabase. Check the app configuration and reload.",
+        );
+      const { data, error } = await supabase.rpc("crm_rotate_sheet_connection");
+      if (error) {
+        if (["42883", "PGRST202"].includes(error.code))
+          throw new Error(
+            "Run supabase/google-sheets-connections.sql in Supabase first.",
+          );
+        throw error;
+      }
+      setSheetToken(data);
+      setPreparedCode("");
+      toast("Secure Sheet connection created. Keep it private.", "success");
+    } catch (error) {
+      const message = error.message || "Could not create the Sheet connection.";
+      setSheetConnectionError(message);
+      toast(message);
+    } finally {
+      setConnectingSheet(false);
+    }
   }
   const {
     data: sourceStatsData,
@@ -96,6 +136,15 @@ export default function Integrations() {
       setChecking(false);
     }
   }
+  async function checkSheetSetup() {
+    setReceiverStatus("checking");
+    try {
+      await checkReceiver();
+      setReceiverStatus("ready");
+    } catch (error) {
+      setReceiverStatus(error.message || "Receiver check failed.");
+    }
+  }
   return (
     <>
       <PageHeader
@@ -114,122 +163,227 @@ export default function Integrations() {
           saved lead automatically.
         </div>
       )}
-      {isAdmin && (
-        <section className="card mb-6 p-4 sm:p-6">
-          <h2 className="section-heading">Add a landing page</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Use the Google Sheet where this page already saves its leads. We will fill in
-            the connector settings for you.
+      <details className="card mb-6 p-4 sm:p-6">
+        <summary className="cursor-pointer text-base font-semibold text-slate-900">
+          Step-by-step Google Sheets setup (no coding needed)
+        </summary>
+        <div className="mt-4 space-y-4 text-sm leading-6 text-slate-600">
+          <p>
+            You only need your Google Sheet and access to this CRM. You do not need
+            Supabase keys. If <strong>Check setup</strong> reports that the receiver is
+            unavailable, ask your CRM administrator to finish the one-time server setup.
           </p>
-          <form onSubmit={prepareConnection} className="mt-5 grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium text-slate-700">
-              Landing page name
-              <input
-                className="input mt-2"
-                required
-                maxLength={200}
-                value={pageName}
-                onChange={(event) => {
-                  setPageName(event.target.value);
-                  setPreparedCode("");
-                }}
-                placeholder="For example: Coaching website"
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700">
-              Google Sheet link
-              <input
-                className="input mt-2"
-                required
-                type="url"
-                value={sheetLink}
-                onChange={(event) => {
-                  setSheetLink(event.target.value);
-                  setPreparedCode("");
-                }}
-                placeholder="Paste your Google Sheet link"
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-700">
-              Sheet tab name
-              <input
-                className="input mt-2"
-                required
-                value={tabName}
-                onChange={(event) => {
-                  setTabName(event.target.value);
-                  setPreparedCode("");
-                }}
-                placeholder="Leads"
-              />
-              <span className="mt-1 block text-xs font-normal text-slate-500">
-                The name at the bottom of the Sheet, not the spreadsheet title.
-              </span>
-            </label>
-            <div className="flex items-center">
-              <button type="submit" className="btn-primary">
-                Prepare my connection
-              </button>
-            </div>
-          </form>
-          {preparedCode && (
-            <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-              <h3 className="font-semibold text-indigo-950">Finish in three steps</h3>
-              <ol className="mt-3 list-decimal space-y-3 pl-5 text-sm leading-6 text-slate-700">
-                <li>
-                  Click <strong>Copy my connector</strong>. Open your Sheet → Extensions →
-                  Apps Script. Add a new script file named CRM Sync and paste the
-                  connector there. Keep your existing form code. If CRM Sync already
-                  exists, update that file instead.
-                </li>
-                <li>
-                  In Apps Script, open Project Settings → Script Properties. Add{" "}
-                  <code>CRM_LEAD_INGEST_SECRET</code> with the same private value as
-                  Supabase's <code>LEAD_INGEST_SECRET</code>. Save it. Never put your
-                  Supabase database key here.
-                </li>
-                <li>
-                  Return to the editor, select <code>setupThisLandingPage</code>, and
-                  click Run. Approve Google's permissions. Check the Sheet's CRM delivery
-                  column for <strong>Delivered to CRM</strong>. Your page will appear
-                  below after its first lead arrives.
-                </li>
-              </ol>
-              <p className="mt-3 text-sm text-slate-600">
-                New leads are checked every minute. If several pages share this Sheet,
-                each row needs its page name in a Source column; otherwise this page name
-                is used for every row.
+          <ol className="list-decimal space-y-3 pl-5">
+            <li>
+              Click <strong>Create secure connection</strong> once. This makes a private
+              connection for your CRM account. Keep the generated code private.
+            </li>
+            <li>
+              Paste your Google Sheet link. Enter the exact tab name shown at the bottom
+              of the Sheet, then enter a page name such as{" "}
+              <strong>Digital Marketing Lead</strong>. Click{" "}
+              <strong>Prepare connection</strong>.
+            </li>
+            <li>
+              Click <strong>Copy connector code</strong>. In your Sheet, open{" "}
+              <strong>Extensions → Apps Script</strong>. Add a new script file with the
+              plus button, name it <strong>CRM Sync</strong>, and paste the copied code
+              there. Save it. Keep any existing form or landing-page script files; do not
+              replace them.
+            </li>
+            <li>
+              In Apps Script, choose <code>setupMyCrmSheet</code> from the function list
+              and click <strong>Run</strong>. Follow Google’s permission prompts. This
+              installs automatic syncing and runs the first sync.
+            </li>
+            <li>
+              Return to the Sheet. A <strong>CRM delivery</strong> column shows which rows
+              arrived. New rows sync about once a minute. To sync now, reload the Sheet
+              and choose <strong>CRM sync → Sync now</strong>.
+            </li>
+          </ol>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <strong className="text-slate-800">Your Sheet needs:</strong> one header row
+            and one lead per row. Name and phone are required; email and other columns are
+            optional. Phone numbers should include the country code. Already delivered
+            rows are not sent again.
+          </div>
+          <div>
+            <strong className="text-slate-800">If something goes wrong:</strong>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              <li>
+                <strong>Skipped - missing name or phone:</strong> check the header row
+                uses Name and Phone, Mobile, or Phone number.
+              </li>
+              <li>
+                <strong>CRM project key is invalid:</strong> create a fresh secure
+                connection once, prepare and copy the code again, replace only the
+                contents of the <strong>CRM Sync</strong> file, save, then run
+                <code>setupMyCrmSheet</code> again.
+              </li>
+              <li>
+                <strong>Receiver is not deployed:</strong> your CRM administrator needs to
+                complete the server setup. You do not need to change your Sheet.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </details>
+      <section className="card mb-6 p-4 sm:p-6">
+        <h2 className="section-heading">Connect a Google Sheet</h2>
+        <p className="mt-2 text-sm text-slate-500">
+          Connect your own Sheet to your private CRM workspace. You do not need Supabase
+          keys or a shared secret.
+        </p>
+        <button
+          type="button"
+          className="btn-secondary mt-4"
+          onClick={createSheetConnection}
+          disabled={connectingSheet}
+        >
+          {connectingSheet
+            ? "Creating secure connectionâ€¦"
+            : sheetToken
+              ? "Create a new connection token"
+              : "Create secure connection"}
+        </button>
+        <button
+          type="button"
+          className="ml-2 min-h-11 px-3 text-sm font-semibold text-indigo-700 underline"
+          onClick={checkSheetSetup}
+          disabled={receiverStatus === "checking"}
+        >
+          {receiverStatus === "checking" ? "Checking setup…" : "Check setup"}
+        </button>
+        {receiverStatus && receiverStatus !== "checking" && (
+          <div
+            role="status"
+            className={`mt-3 rounded-lg p-3 text-sm ${receiverStatus === "ready" ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
+          >
+            <p>
+              {receiverStatus === "ready"
+                ? "Supabase receiver is reachable. The connection migration must also be installed."
+                : receiverStatus}
+            </p>
+            {receiverStatus.includes("not deployed") && (
+              <p className="mt-2">
+                Deploy the <code>lead-ingest</code> Edge Function from this project to
+                Supabase, then check setup again. Follow{" "}
+                <code>LEAD_CONNECTION_SETUP.md</code>.
               </p>
-              <button
-                type="button"
-                className="btn-primary mt-4"
-                onClick={() => copy(preparedCode, "Configured connector")}
-              >
-                <Copy size={16} />
-                Copy my connector
-              </button>
-              <details className="mt-3">
-                <summary className="cursor-pointer text-sm font-semibold text-slate-600">
-                  View my connector
-                </summary>
-                <textarea
-                  aria-label="Configured landing page connector"
-                  className="input mt-3 h-72 font-mono text-xs"
-                  readOnly
-                  value={preparedCode}
+            )}
+          </div>
+        )}
+        {sheetConnectionError && (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            {sheetConnectionError}
+          </p>
+        )}
+        {sheetToken && (
+          <>
+            <form onSubmit={prepareConnection} className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700">
+                Google Sheet link
+                <input
+                  className="input mt-2"
+                  required
+                  type="url"
+                  value={sheetLink}
+                  onChange={(event) => {
+                    setSheetLink(event.target.value);
+                    setPreparedCode("");
+                  }}
+                  placeholder="Paste your Google Sheet link"
                 />
-              </details>
-            </div>
-          )}
-        </section>
-      )}
+              </label>
+              <label className="text-sm font-medium text-slate-700">
+                Sheet tab name
+                <input
+                  className="input mt-2"
+                  required
+                  value={tabName}
+                  onChange={(event) => {
+                    setTabName(event.target.value);
+                    setPreparedCode("");
+                  }}
+                  placeholder="Leads"
+                />
+              </label>
+              <label className="text-sm font-medium text-slate-700">
+                CRM page name
+                <input
+                  className="input mt-2"
+                  value={pageName}
+                  onChange={(event) => {
+                    setPageName(event.target.value);
+                    setPreparedCode("");
+                  }}
+                  placeholder="My leads"
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  This names the group of leads in your workspace.
+                </span>
+              </label>
+              <div className="flex items-center">
+                <button type="submit" className="btn-primary">
+                  Prepare connection
+                </button>
+              </div>
+            </form>
+            {preparedCode && (
+              <div className="mt-5 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+                <h3 className="font-semibold text-indigo-950">Finish in Google Sheets</h3>
+                <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
+                  <li>
+                    Open the Sheet and choose <strong>Extensions â†’ Apps Script</strong>.
+                  </li>
+                  <li>
+                    Add a new script file named <strong>CRM Sync</strong>, paste the
+                    copied code into it, and save. Keep your existing scripts.
+                  </li>
+                  <li>
+                    Select <code>setupMyCrmSheet</code>, click <strong>Run</strong>, and
+                    approve Googleâ€™s access. New rows sync every minute.
+                  </li>
+                </ol>
+                <p className="mt-3 text-sm text-slate-600">
+                  The generated code contains a private connection token for your account.
+                  Keep it private. If exposed, create a new token here and update the
+                  Sheet script.
+                </p>
+                <button
+                  type="button"
+                  className="btn-primary mt-4"
+                  onClick={() => copy(preparedCode, "Google Sheets connector")}
+                >
+                  {" "}
+                  <Copy size={16} /> Copy connector code
+                </button>
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-600">
+                    View connector code
+                  </summary>
+                  <textarea
+                    aria-label="Google Sheets connector code"
+                    className="input mt-3 h-72 font-mono text-xs"
+                    readOnly
+                    value={preparedCode}
+                  />
+                </details>
+              </div>
+            )}
+          </>
+        )}
+      </section>
       <section className="card mb-6 p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="section-heading">Your landing pages</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Each page appears here automatically after a lead arrives with its page name
-              in the Sheet’s Source column.
+              Your connected Sheet data appears in your private workspace.
             </p>
           </div>
           <Link className="btn-secondary" to="/leads">
@@ -237,7 +391,7 @@ export default function Integrations() {
           </Link>
         </div>
         {sourcesLoading ? (
-          <p className="mt-5 text-sm text-slate-500">Loading landing pages…</p>
+          <p className="mt-5 text-sm text-slate-500">Loading pages…</p>
         ) : sourcesError ? (
           <LoadError error={sourcesError} reload={reloadSources} />
         ) : landingPages.length ? (
@@ -247,16 +401,19 @@ export default function Integrations() {
                 key={source}
                 className="rounded-xl border border-slate-200 bg-white p-4"
               >
-                <h3 className="truncate font-semibold text-slate-900" title={source}>
-                  {sourceName(source, pageNames, access?.personal_source)}
-                </h3>
-                {(isAdmin || access?.sources?.includes(source)) && (
-                  <PageName
-                    source={source}
-                    name={sourceName(source, pageNames, access?.personal_source)}
-                    onSaved={reloadNames}
-                  />
-                )}
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="truncate font-semibold text-slate-900">
+                    {sourceName(source, pageNames, access?.personal_source)}
+                    <UpdateIndicator source={source} section="integrations" />
+                  </h3>
+                  {(isAdmin || access?.sources?.includes(source)) && (
+                    <PageName
+                      source={source}
+                      name={sourceName(source, pageNames, access?.personal_source)}
+                      onSaved={reloadSources}
+                    />
+                  )}
+                </div>
                 <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                   {[
                     ["Total", stats.total],
@@ -270,146 +427,21 @@ export default function Integrations() {
                   ))}
                 </div>
                 <Link
-                  className="mt-4 inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="mt-3 inline-flex text-sm font-semibold text-indigo-600"
                   to={`/leads?source=${encodeURIComponent(source)}`}
                 >
-                  Open this page’s leads →
+                  Open leads ?
                 </Link>
                 {isAdmin && <PageSharing source={source} />}
               </article>
             ))}
           </div>
         ) : (
-          <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-600">
-            {isAdmin ? (
-              <>
-                No landing pages have sent leads yet. Connect a Google Sheet above or
-                import a file from the Leads page to get started.
-              </>
-            ) : (
-              <>
-                Your workspace is ready. No landing pages are shared with your email yet.
-                Ask your administrator to share a page; its leads will appear here.
-              </>
-            )}
-          </div>
+          <p className="mt-5 text-sm text-slate-600">
+            No leads yet. Connect a Sheet or import a file from Leads.
+          </p>
         )}
       </section>
-      {isAdmin && (
-        <details className="mb-6">
-          <summary className="cursor-pointer py-3 text-sm font-semibold text-slate-600">
-            Advanced connection settings and receiver check
-          </summary>
-          <div className="grid items-start gap-6 xl:grid-cols-2">
-            <section className="card p-4 sm:p-6">
-              <div className="mb-4 flex items-center gap-2">
-                <TableProperties className="text-emerald-600" size={20} />
-                <h2 className="section-heading">CRM receiver</h2>
-              </div>
-              <p className="text-sm text-slate-500">
-                The Apps Script sends saved leads here over HTTPS.
-              </p>
-              <div className="mt-5 rounded-lg bg-slate-50 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500">
-                    Receiver URL
-                  </span>
-                  <button
-                    aria-label="Copy receiver URL"
-                    className="flex h-11 w-11 items-center justify-center"
-                    onClick={() => copy(receiverUrl(), "Receiver URL")}
-                  >
-                    <Copy size={16} />
-                  </button>
-                </div>
-                <code className="block break-all text-xs leading-5">
-                  {receiverUrl() || "Supabase is not configured."}
-                </code>
-              </div>
-              <button
-                className="btn-secondary mt-4 w-full"
-                onClick={check}
-                disabled={checking}
-              >
-                <RefreshCw size={16} />
-                {checking ? "Checking..." : "Check receiver"}
-              </button>
-              {status === "ready" && (
-                <p
-                  role="status"
-                  className="mt-3 flex items-center gap-2 text-sm text-emerald-700"
-                >
-                  <CheckCircle2 size={17} />
-                  Receiver is ready. Delivery still needs a real sheet submission to
-                  verify.
-                </p>
-              )}
-              {status && status !== "ready" && (
-                <p
-                  role="status"
-                  className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-                >
-                  {status}
-                </p>
-              )}
-            </section>
-            <section className="card p-4 sm:p-6">
-              <h2 className="section-heading">Connect a Google Sheet</h2>
-              <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-slate-600">
-                <li>
-                  In the Sheet?s Apps Script, add the sync script below. It automatically
-                  reads existing lead rows every minute; you do not need to edit the
-                  landing-page form or its doPost handler.
-                </li>
-                <li>
-                  For multiple landing pages in one Sheet, include a <code>Source</code>,{" "}
-                  <code>Lead source</code>, <code>Landing page</code>, or{" "}
-                  <code>Page name</code> column and put the matching page label in each
-                  lead row. The CRM will show a Landing page filter on the Leads page. Use{" "}
-                  <code>CRM_LEAD_SOURCE</code> only as a fallback for rows without a
-                  source column value.
-                </li>
-                <li>
-                  In Apps Script project settings, add <code>CRM_SOURCE_SHEET_ID</code>{" "}
-                  (the ID from your Sheet URL), <code>CRM_SOURCE_SHEET_NAME</code>{" "}
-                  (usually Leads), <code>CRM_LEAD_RECEIVER_URL</code> (the URL above),{" "}
-                  <code>CRM_LEAD_INGEST_SECRET</code> (the private receiver secret), and
-                  optionally <code>CRM_LEAD_SOURCE</code> as the fallback page name.
-                </li>
-                <li>
-                  Select <code>installCrmSheetSync</code> and click Run once to authorize
-                  Sheets and outbound requests and install the trigger. The script checks
-                  up to ten rows per run, retries failed rows, and adds a CRM delivery
-                  status column.
-                </li>
-              </ol>
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <button
-                  className="btn-primary"
-                  onClick={() => copy(sheetSyncCode, "Apps Script sync script")}
-                >
-                  <Copy size={16} />
-                  Copy Google Sheets sync script
-                </button>
-                <Link className="btn-secondary" to="/leads">
-                  Open leads
-                </Link>
-              </div>
-              <details className="mt-4">
-                <summary className="cursor-pointer text-sm font-semibold text-slate-600">
-                  View Google Sheets sync script
-                </summary>
-                <textarea
-                  aria-label="Google Sheets sync script"
-                  className="input mt-3 h-72 w-full font-mono text-xs leading-5"
-                  readOnly
-                  value={sheetSyncCode}
-                />
-              </details>
-            </section>
-          </div>
-        </details>
-      )}
       <section className="card mt-6 p-4 sm:p-6">
         <h2 className="section-heading">What arrives in the CRM</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">

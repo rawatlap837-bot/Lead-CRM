@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { AuthContext } from "./auth-state";
 export function AuthProvider({ children }) {
@@ -10,6 +10,15 @@ export function AuthProvider({ children }) {
   const [access, setAccess] = useState(null);
   const [accessLoading, setAccessLoading] = useState(false);
   const [accessError, setAccessError] = useState("");
+  const currentUser = useRef(session?.user?.id);
+  currentUser.current = session?.user?.id;
+  const refreshAccess = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId || !supabase) return;
+    const { data, error } = await supabase.rpc("crm_access_context");
+    if (error) throw new Error(error.message);
+    if (currentUser.current === userId) setAccess(data);
+  }, [session?.user?.id]);
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
@@ -90,6 +99,7 @@ export function AuthProvider({ children }) {
         accessLoading:
           accessLoading || Boolean(session && access === null && !accessError),
         accessError,
+        refreshAccess,
       }}
     >
       {children}

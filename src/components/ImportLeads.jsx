@@ -2,9 +2,11 @@ import { useState, useRef } from "react";
 import { useAuth } from "../context/auth-state";
 import { flexibleRows, saveFileRows } from "../lib/flexibleImports";
 import { sourceName } from "../lib/personalWorkspace";
+import { createSection } from "../lib/sections";
 
 export default function ImportLeads({
   sources,
+  pageNames,
   defaultSource,
   onImported,
   onBusyChange,
@@ -21,9 +23,19 @@ export default function ImportLeads({
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
   const [busy, setBusy] = useState(false);
+  const [destination, setDestination] = useState("existing");
+  const [sectionName, setSectionName] = useState("");
+  const [createdSource, setCreatedSource] = useState(null);
+  const createdSection = useRef(null);
   // The ref locks immediately; React state updates alone cannot stop two rapid clicks.
   const pending = useRef(false);
-  const options = [...new Set([...sources, ...(access?.sources || [])])];
+  const options = [
+    ...new Set([
+      ...sources,
+      ...(access?.sources || []),
+      ...(createdSource ? [createdSource] : []),
+    ]),
+  ];
   function selectSheet(workbook, name, XLSX) {
     const data = flexibleRows(
       XLSX.utils.sheet_to_json(workbook.Sheets[name], {
@@ -45,6 +57,9 @@ export default function ImportLeads({
     setBook(null);
     if (!file) return;
     setFileName(file.name);
+    setSectionName(
+      (previous) => previous || file.name.replace(/\.(xlsx?|csv)$/i, "").slice(0, 200),
+    );
     if (file.size > 5 * 1024 * 1024) {
       setError("Choose a file smaller than 5 MB.");
       return;
@@ -64,11 +79,15 @@ export default function ImportLeads({
     setError("");
     setSummary("");
     if (!rows.length) return;
-    if (!source.trim()) {
+    if (destination === "new" && !sectionName.trim()) {
+      setError("Enter a name for the new section.");
+      return;
+    }
+    if (destination === "existing" && !source.trim()) {
       setError("Enter a landing page name.");
       return;
     }
-    if (!admin && !options.includes(source.trim())) {
+    if (destination === "existing" && !admin && !options.includes(source.trim())) {
       setError("Choose a page shared with you.");
       return;
     }
@@ -76,15 +95,28 @@ export default function ImportLeads({
     setBusy(true);
     onBusyChange(true);
     try {
-      await saveFileRows(rows, source, fileName);
+      let selectedSource = source;
+      if (destination === "new") {
+        const name = sectionName.trim();
+        if (createdSection.current?.name !== name) {
+          createdSection.current = { name, source: await createSection(name) };
+        }
+        selectedSource = createdSection.current.source;
+        setCreatedSource(selectedSource);
+      }
+      await saveFileRows(rows, selectedSource, fileName.trim() || "Untitled import");
       setSummary(
         rows.length +
           " rows uploaded into " +
-          sourceName(source, {}, access?.personal_source) +
+          (destination === "new"
+            ? sectionName.trim()
+            : sourceName(selectedSource, pageNames, access?.personal_source)) +
           ".",
       );
       setRows([]);
-      await onImported(source);
+      setSource(selectedSource);
+      setDestination("existing");
+      await onImported(selectedSource);
     } catch (issue) {
       setError(issue.message);
     } finally {
@@ -101,39 +133,67 @@ export default function ImportLeads({
         nonblank rows and columns are preserved in this page, including the first row. You
         can edit them after uploading.
       </p>
-      <label className="block text-sm">
-        Landing page
-        {admin ? (
+      <label className="field">
+        Import destination
+        <select
+          className="input"
+          value={destination}
+          disabled={busy}
+          onChange={(event) => setDestination(event.target.value)}
+        >
+          <option value="existing">Existing section</option>
+          <option value="new">New named section</option>
+        </select>
+      </label>
+      {destination === "new" ? (
+        <label className="field">
+          New section name
           <input
-            className="input mt-2"
-            list="import-pages"
-            value={source}
+            className="input"
+            value={sectionName}
             maxLength={200}
             disabled={busy}
-            onChange={(e) => setSource(e.target.value)}
-            placeholder="Choose or enter a page name"
+            onChange={(event) => setSectionName(event.target.value)}
+            placeholder="e.g. October marketing leads"
           />
-        ) : (
-          <select
-            className="input mt-2"
-            value={source}
-            disabled={busy}
-            onChange={(e) => setSource(e.target.value)}
-          >
-            <option value="">Choose a page</option>
-            {options.map((x) => (
-              <option key={x} value={x}>
-                {sourceName(x, {}, access?.personal_source)}
-              </option>
-            ))}
-          </select>
-        )}
-        <datalist id="import-pages">
-          {options.map((x) => (
-            <option key={x} value={x} />
-          ))}
-        </datalist>
-      </label>
+        </label>
+      ) : (
+        <>
+          <label className="block text-sm">
+            Section
+            {admin ? (
+              <input
+                className="input mt-2"
+                list="import-pages"
+                value={source}
+                maxLength={200}
+                disabled={busy}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder="Choose or enter a page name"
+              />
+            ) : (
+              <select
+                className="input mt-2"
+                value={source}
+                disabled={busy}
+                onChange={(e) => setSource(e.target.value)}
+              >
+                <option value="">Choose a page</option>
+                {options.map((x) => (
+                  <option key={x} value={x}>
+                    {sourceName(x, pageNames, access?.personal_source)}
+                  </option>
+                ))}
+              </select>
+            )}
+            <datalist id="import-pages">
+              {options.map((x) => (
+                <option key={x} value={x} />
+              ))}
+            </datalist>
+          </label>
+        </>
+      )}
       <label className="block text-sm">
         Excel or CSV file
         <input
@@ -144,6 +204,19 @@ export default function ImportLeads({
           onChange={(e) => read(e.target.files[0])}
         />
       </label>
+      {fileName && (
+        <label className="field">
+          Import name
+          <input
+            className="input"
+            value={fileName}
+            maxLength={200}
+            disabled={busy}
+            onChange={(event) => setFileName(event.target.value)}
+            placeholder="Name for this uploaded file"
+          />
+        </label>
+      )}
       {book && (
         <label className="block text-sm">
           Worksheet
@@ -173,7 +246,9 @@ export default function ImportLeads({
           </p>
           <button
             className="btn-primary"
-            disabled={busy || !source.trim()}
+            disabled={
+              busy || (destination === "new" ? !sectionName.trim() : !source.trim())
+            }
             onClick={upload}
           >
             {busy ? "Uploading…" : "Upload " + rows.length + " rows into this page"}

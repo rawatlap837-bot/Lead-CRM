@@ -16,6 +16,9 @@ import { useAuth } from "../context/auth-state";
 import { useToast } from "../context/toast-state";
 import { displayDate, todayIST } from "../lib/dates";
 import ConnectionStatus from "./ConnectionStatus";
+import ActivityNotifications, { NotificationBell } from "./ActivityNotifications";
+import useActivity from "../lib/useActivity";
+import { activitySections } from "../lib/activity";
 const links = [
   ["/", "Dashboard", LayoutDashboard],
   ["/leads", "Leads", Users],
@@ -31,8 +34,12 @@ export default function Sidebar() {
   );
   const [busy, setBusy] = useState(false);
   const { session, access } = useAuth();
+  const activity = useActivity(session?.user?.id);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationSection, setNotificationSection] = useState("/");
   const toast = useToast();
   const location = useLocation();
+  const sectionPath = locationSection(location.pathname);
   const drawer = useRef(null);
   const menuButton = useRef(null);
   useEffect(() => {
@@ -91,16 +98,25 @@ export default function Sidebar() {
     <div className="min-h-screen bg-slate-50">
       <div className="mobile-header fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-white/10 bg-slate-950 px-4 text-white lg:hidden">
         <Brand />
-        <button
-          ref={menuButton}
-          aria-controls="workspace-navigation"
-          aria-label={open ? "Close navigation" : "Open navigation"}
-          aria-expanded={open}
-          className="flex h-11 w-11 items-center justify-center rounded-lg"
-          onClick={() => setOpen(!open)}
-        >
-          {open ? <X /> : <Menu />}
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationBell
+            count={activity.unread.length}
+            onClick={() => {
+              setNotificationSection("/");
+              setNotificationsOpen(true);
+            }}
+          />
+          <button
+            ref={menuButton}
+            aria-controls="workspace-navigation"
+            aria-label={open ? "Close navigation" : "Open navigation"}
+            aria-expanded={open}
+            className="flex h-11 w-11 items-center justify-center rounded-lg"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? <X /> : <Menu />}
+          </button>
+        </div>
       </div>
       {open && (
         <button
@@ -145,6 +161,12 @@ export default function Sidebar() {
             >
               <Icon size={19} />
               {label}
+              {activity.counts[to] > 0 && (
+                <span
+                  className="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
+                  aria-label={`${activity.counts[to]} unread updates`}
+                />
+              )}
             </NavLink>
           ))}
         </nav>
@@ -202,6 +224,13 @@ export default function Sidebar() {
             <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold">
               IST
             </span>
+            <NotificationBell
+              count={activity.unread.length}
+              onClick={() => {
+                setNotificationSection("/");
+                setNotificationsOpen(true);
+              }}
+            />
           </div>
         </header>
         <main
@@ -209,16 +238,71 @@ export default function Sidebar() {
           className="mx-auto min-w-0 max-w-[1600px] p-4 pb-8 sm:p-6 lg:p-8"
         >
           <ConnectionStatus />
-          <Outlet />
+          {activity.counts[sectionPath] > 0 && (
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-slate-200 pb-2"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2 text-xs text-slate-500">
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+                    aria-hidden="true"
+                  />
+                  {activity.counts[sectionPath]} unread{" "}
+                  {activity.counts[sectionPath] === 1 ? "update" : "updates"} in this
+                  section
+                </p>
+                <p className="mt-1 truncate text-sm font-medium text-slate-800">
+                  {
+                    activity.events.find(
+                      (event) =>
+                        !event.read && activitySections(event).includes(sectionPath),
+                    )?.message
+                  }
+                </p>
+              </div>
+              <button
+                className="inline-flex min-h-11 items-center text-xs font-semibold text-slate-700 hover:text-slate-950 focus-visible:outline-red-500"
+                onClick={() => {
+                  setNotificationSection(sectionPath);
+                  setNotificationsOpen(true);
+                  activity.markRead(
+                    activity.events
+                      .filter(
+                        (event) =>
+                          !event.read && activitySections(event).includes(sectionPath),
+                      )
+                      .map((event) => event.id),
+                  );
+                }}
+              >
+                View updates
+              </button>
+            </div>
+          )}
+          <Outlet context={{ activity }} />
         </main>
       </div>
+      {notificationsOpen && (
+        <ActivityNotifications
+          activity={activity}
+          initialSection={notificationSection}
+          ownSource={access?.personal_source}
+          onClose={() => setNotificationsOpen(false)}
+        />
+      )}
     </div>
   );
+}
+function locationSection(pathname) {
+  if (pathname.startsWith("/leads")) return "/leads";
+  return pathname;
 }
 export function Brand() {
   return (
     <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
-      <span className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-950 sm:h-12 sm:w-14">
+      <span className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden sm:h-12 sm:w-14">
         <img
           src="/cc.webp"
           alt=""

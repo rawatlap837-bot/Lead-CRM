@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { FileSpreadsheet, FileDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { fetchReport, STATUSES, statusLabel } from "../lib/leads";
+import { fetchLeadSources, fetchReport, STATUSES, statusLabel } from "../lib/leads";
 import { todayIST, rangeFor, displayDate, weekStart } from "../lib/dates";
 import { validDate } from "../lib/validation";
 import { flattenLeads } from "../lib/answers";
@@ -12,22 +12,53 @@ import StatusBadge from "../components/StatusBadge";
 import Spinner from "../components/Spinner";
 import LoadError from "../components/LoadError";
 import EmptyState from "../components/EmptyState";
+import { fetchPageNames } from "../lib/pageNames";
+import { sourceName } from "../lib/personalWorkspace";
+import { useAuth } from "../context/auth-state";
 export default function Reports() {
   const [period, setPeriod] = useState("month");
   const [value, setValue] = useState(todayIST());
+  const [source, setSource] = useState("");
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState("");
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const toast = useToast();
-  const range = useMemo(() => rangeFor(period, value), [period, value]);
+  const { access } = useAuth();
+  const {
+    data: sources,
+    loading: sourcesLoading,
+    error: sourcesError,
+  } = useLoad(fetchLeadSources, []);
+  const {
+    data: pageNames,
+    loading: namesLoading,
+    error: namesError,
+  } = useLoad(fetchPageNames, []);
+  const range = useMemo(
+    () =>
+      period === "all"
+        ? {
+            start: "all-time",
+            end: "all-time",
+            label: "All time",
+          }
+        : rangeFor(period, value),
+    [period, value],
+  );
   const { data, loading, error, reload } = useLoad(
-    () => fetchReport(range),
-    [range.from, range.to],
+    () => fetchReport(range, source),
+    [range.from, range.to, source],
   );
   const flattened = useMemo(() => flattenLeads(data || []), [data]);
+  useEffect(() => {
+    setPage(0);
+    setSelectedIds(new Set());
+  }, [source, period, value]);
   function choosePeriod(next) {
     setPeriod(next);
     setValue(todayIST());
     setPage(0);
+    setSelectedIds(new Set());
   }
   function chooseValue(next) {
     if (next) {
@@ -36,27 +67,57 @@ export default function Reports() {
       if (!validDate(date)) return;
       setValue(period === "week" ? weekStart(date) : date);
       setPage(0);
+      setSelectedIds(new Set());
     }
   }
-  async function download(kind) {
-    setBusy(kind);
+  async function download(kind, selectedOnly = false) {
+    setBusy(`${kind}${selectedOnly ? "-selected" : ""}`);
     try {
-      const all = await fetchReport(range);
+      const all = selectedOnly
+        ? data.filter((lead) => selectedIds.has(lead.id))
+        : await fetchReport(range, source);
+      if (!all.length) throw new Error("Select at least one lead to export.");
+      const exportPeriod = selectedOnly ? "selected" : source ? "source" : period;
+      const exportRange = selectedOnly
+        ? { ...range, label: `${all.length} selected leads` }
+        : source
+          ? {
+              ...range,
+              label: `${sourceName(source, pageNames, access?.personal_source)} · ${range.label}`,
+            }
+          : range;
       if (kind === "excel") {
         const { exportExcel } = await import("../lib/exportExcel");
-        exportExcel(all, period, range);
+        exportExcel(all, exportPeriod, exportRange);
       } else {
         const { exportPdf } = await import("../lib/exportPdf");
-        exportPdf(all, period, range);
+        exportPdf(all, exportPeriod, exportRange);
       }
-      toast("Report exported.", "success");
+      toast(
+        selectedOnly ? `${all.length} selected leads exported.` : "Report exported.",
+        "success",
+      );
     } catch (issue) {
       toast(issue.message);
     } finally {
       setBusy("");
     }
   }
+  const visibleLeads = (data || []).slice(page * 25, page * 25 + 25);
+  const selectedCount = data?.filter((lead) => selectedIds.has(lead.id)).length || 0;
+  const allVisibleSelected =
+    visibleLeads.length > 0 && visibleLeads.every((lead) => selectedIds.has(lead.id));
+  function toggleVisible() {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (allVisibleSelected) visibleLeads.forEach((lead) => next.delete(lead.id));
+      else visibleLeads.forEach((lead) => next.add(lead.id));
+      return next;
+    });
+  }
   const currentYear = Number(todayIST().slice(0, 4));
+  const filterLoading = sourcesLoading || namesLoading;
+  const filterError = sourcesError || namesError;
   return (
     <>
       <PageHeader
@@ -65,7 +126,14 @@ export default function Reports() {
         description="Turn your lead activity into a clearer picture."
       >
         <button
-          disabled={loading || !!error || !data?.length || !!busy}
+          disabled={
+            loading ||
+            !!error ||
+            filterLoading ||
+            !!filterError ||
+            !data?.length ||
+            !!busy
+          }
           className="btn-secondary"
           onClick={() => download("excel")}
         >
@@ -73,7 +141,14 @@ export default function Reports() {
           {busy === "excel" ? "Exporting…" : "Export Excel"}
         </button>
         <button
-          disabled={loading || !!error || !data?.length || !!busy}
+          disabled={
+            loading ||
+            !!error ||
+            filterLoading ||
+            !!filterError ||
+            !data?.length ||
+            !!busy
+          }
           className="btn-primary"
           onClick={() => download("pdf")}
         >
@@ -82,12 +157,29 @@ export default function Reports() {
         </button>
       </PageHeader>
       <div className="card mb-6 flex flex-wrap items-center justify-between gap-4 p-4">
+        <label className="flex w-full flex-wrap items-center gap-3 text-xs text-slate-500 sm:w-auto">
+          <span className="filter-caption">Lead source</span>
+          <select
+            aria-label="Filter reports by lead source"
+            className="input min-w-0 flex-1 sm:!w-auto"
+            value={source}
+            disabled={filterLoading || !!filterError}
+            onChange={(event) => setSource(event.target.value)}
+          >
+            <option value="">All sources</option>
+            {(sources || []).map((item) => (
+              <option key={item} value={item}>
+                {sourceName(item, pageNames, access?.personal_source)}
+              </option>
+            ))}
+          </select>
+        </label>
         <div
           role="tablist"
           aria-label="Report period"
-          className="grid w-full grid-cols-4 rounded-lg bg-slate-100 p-1 sm:w-auto"
+          className="grid w-full grid-cols-5 rounded-lg bg-slate-100 p-1 sm:w-auto"
         >
-          {["day", "week", "month", "year"].map((p) => (
+          {["day", "week", "month", "year", "all"].map((p) => (
             <button
               key={p}
               role="tab"
@@ -99,40 +191,46 @@ export default function Reports() {
             </button>
           ))}
         </div>
-        <label className="report-date-filter flex w-full flex-wrap items-center gap-3 text-xs text-slate-500 sm:w-auto">
-          <span className="filter-caption">Select {period}</span>
-          {period === "year" ? (
-            <select
-              aria-label="Select year"
-              className="input min-w-0 flex-1 sm:!w-auto"
-              value={value.slice(0, 4)}
-              onChange={(e) => chooseValue(e.target.value)}
-            >
-              {Array.from({ length: 31 }, (_, i) => currentYear + 1 - i).map((y) => (
-                <option key={y}>{y}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              aria-label={`Select ${period}`}
-              className="input min-w-0 flex-1 sm:!w-auto"
-              type={period === "day" || period === "week" ? "date" : period}
-              value={
-                period === "week"
-                  ? weekStart(value)
-                  : period === "month"
-                    ? value.slice(0, 7)
-                    : value
-              }
-              onChange={(e) => chooseValue(e.target.value)}
-            />
-          )}
-          <span className="rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600">
-            IST
-          </span>
-        </label>
+        {period === "all" ? (
+          <span className="text-xs font-medium text-slate-500">Including all dates</span>
+        ) : (
+          <label className="report-date-filter flex w-full flex-wrap items-center gap-3 text-xs text-slate-500 sm:w-auto">
+            <span className="filter-caption">Select {period}</span>
+            {period === "year" ? (
+              <select
+                aria-label="Select year"
+                className="input min-w-0 flex-1 sm:!w-auto"
+                value={value.slice(0, 4)}
+                onChange={(e) => chooseValue(e.target.value)}
+              >
+                {Array.from({ length: 31 }, (_, i) => currentYear + 1 - i).map((y) => (
+                  <option key={y}>{y}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                aria-label={`Select ${period}`}
+                className="input min-w-0 flex-1 sm:!w-auto"
+                type={period === "day" || period === "week" ? "date" : period}
+                value={
+                  period === "week"
+                    ? weekStart(value)
+                    : period === "month"
+                      ? value.slice(0, 7)
+                      : value
+                }
+                onChange={(e) => chooseValue(e.target.value)}
+              />
+            )}
+            <span className="rounded-md bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600">
+              IST
+            </span>
+          </label>
+        )}
       </div>
-      {loading ? (
+      {filterError ? (
+        <LoadError error={filterError} reload={() => window.location.reload()} />
+      ) : loading ? (
         <Spinner />
       ) : error ? (
         <LoadError error={error} reload={reload} />
@@ -154,17 +252,64 @@ export default function Reports() {
           </div>
           <section className="card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-5">
-              <h2 className="section-heading">Lead activity</h2>
+              <h2 className="section-heading">
+                Lead activity
+                {source
+                  ? ` · ${sourceName(source, pageNames, access?.personal_source)}`
+                  : ""}
+              </h2>
               <span className="text-xs text-slate-400">
-                {range.label} · All exports include the full period
+                {range.label} · Select leads below to export only those rows
               </span>
             </div>
             {data.length ? (
               <>
+                {selectedCount > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100 bg-indigo-50/70 px-5 py-3">
+                    <p className="text-sm font-semibold text-indigo-950">
+                      {selectedCount} lead{selectedCount === 1 ? "" : "s"} selected
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn-secondary"
+                        disabled={!!busy}
+                        onClick={() => download("excel", true)}
+                      >
+                        <FileSpreadsheet size={16} />
+                        {busy === "excel-selected"
+                          ? "Exporting…"
+                          : "Export selected Excel"}
+                      </button>
+                      <button
+                        className="btn-primary"
+                        disabled={!!busy}
+                        onClick={() => download("pdf", true)}
+                      >
+                        <FileDown size={16} />
+                        {busy === "pdf-selected" ? "Exporting…" : "Export selected PDF"}
+                      </button>
+                      <button
+                        className="min-h-11 px-3 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                        disabled={!!busy}
+                        onClick={() => setSelectedIds(new Set())}
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="responsive-table">
                     <thead>
                       <tr>
+                        <th>
+                          <input
+                            type="checkbox"
+                            aria-label="Select all leads on this page"
+                            checked={allVisibleSelected}
+                            onChange={toggleVisible}
+                          />
+                        </th>
                         {flattened.headers.map((h, i) => (
                           <th key={i}>{h}</th>
                         ))}
@@ -173,6 +318,22 @@ export default function Reports() {
                     <tbody>
                       {flattened.rows.slice(page * 25, page * 25 + 25).map((row, i) => (
                         <tr key={data[page * 25 + i].id}>
+                          <td data-label="Select">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select lead ${row[0] || "unnamed"}`}
+                              checked={selectedIds.has(data[page * 25 + i].id)}
+                              onChange={() =>
+                                setSelectedIds((previous) => {
+                                  const next = new Set(previous);
+                                  const id = data[page * 25 + i].id;
+                                  if (next.has(id)) next.delete(id);
+                                  else next.add(id);
+                                  return next;
+                                })
+                              }
+                            />
+                          </td>
                           {row.map((cell, column) => (
                             <td
                               data-label={flattened.headers[column]}

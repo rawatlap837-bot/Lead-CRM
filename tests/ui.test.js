@@ -23,7 +23,11 @@ let receiverChecks = 0;
 let recoveryRequests = 0;
 let importedRows = [];
 let savedLead = null;
+let sectionSources = [];
+let fileRows = [];
 const pageLabels = new Map();
+let activityEvents = [];
+let activityReads = [];
 const h = React.createElement;
 const originalBroadcastChannel = globalThis.BroadcastChannel;
 const auth = {
@@ -65,7 +69,53 @@ before(async () => {
   server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     res.setHeader("Content-Type", "application/json");
-    if (url.pathname.endsWith("/functions/v1/super-worker")) {
+    if (url.pathname.endsWith("/rpc/crm_rotate_sheet_connection")) {
+      res.end(JSON.stringify("sheet-token-".padEnd(64, "x")));
+      return;
+    }
+    if (url.pathname.endsWith("/rpc/crm_create_section")) {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const source = `Section / test-${sectionSources.length}`;
+      sectionSources.push(source);
+      pageLabels.set(source, JSON.parse(body).section_name);
+      res.end(JSON.stringify(source));
+      return;
+    }
+    if (url.pathname.endsWith("/rpc/crm_delete_section")) {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const source = JSON.parse(body).page_source;
+      sectionSources = sectionSources.filter((item) => item !== source);
+      pageLabels.delete(source);
+      res.end("null");
+      return;
+    }
+    if (url.pathname.endsWith("/crm_sections")) {
+      res.end(JSON.stringify(sectionSources.map((source) => ({ source }))));
+      return;
+    }
+    if (url.pathname.endsWith("/crm_activity")) {
+      res.end(
+        JSON.stringify(
+          activityEvents.map((event) => ({
+            ...event,
+            crm_activity_reads: activityReads.filter(
+              (read) => read.event_id === event.id,
+            ),
+          })),
+        ),
+      );
+      return;
+    }
+    if (url.pathname.endsWith("/crm_activity_reads")) {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      if (body) activityReads.push(...JSON.parse(body));
+      res.end("[]");
+      return;
+    }
+    if (url.pathname.endsWith("/functions/v1/lead-ingest")) {
       receiverChecks++;
       assert.equal(req.headers.authorization, undefined);
       assert.equal(req.headers.apikey, undefined);
@@ -97,7 +147,7 @@ before(async () => {
         for await (const chunk of req) body += chunk;
         importedRows = JSON.parse(body);
       }
-      res.end("[]");
+      res.end(JSON.stringify(fileRows));
       return;
     }
     if (url.pathname.endsWith("/crm_page_members")) {
@@ -166,6 +216,7 @@ before(async () => {
   process.env.VITE_SUPABASE_URL = `http://127.0.0.1:${server.address().port}`;
   process.env.VITE_SUPABASE_ANON_KEY = "local-ui-fixture";
   vite = await createServer({
+    configLoader: "runner",
     configFile: false,
     plugins: [reactPlugin()],
     server: { middlewareMode: true, hmr: false, ws: false },
@@ -217,6 +268,10 @@ before(async () => {
     modules[name] = await vite.ssrLoadModule(`/src/${path}`);
 });
 afterEach(async () => {
+  sectionSources = [];
+  fileRows = [];
+  activityEvents = [];
+  activityReads = [];
   pageLabels.clear();
   if (root) {
     await act(async () => root.unmount());
@@ -489,10 +544,13 @@ test("members cannot see connection or sharing controls", async () => {
   await mount(h(modules.Integrations.default), {
     session: { ...auth, access: { is_admin: false, sources: ["Website"] } },
   });
-  await settle(() => document.body.textContent.includes("Open this page"));
+  await settle(() => document.body.textContent.includes("Open leads"));
   assert.match(document.body.textContent, /My landing pages/);
   assert.equal(button("Send invitation"), undefined);
-  assert.equal(button("Prepare my connection"), undefined);
+  assert.ok(button("Create secure connection"));
+  await act(async () => button("Create secure connection").click());
+  await settle(() => document.body.textContent.includes("Google Sheet link"));
+  assert.doesNotMatch(document.body.textContent, /LEAD_INGEST_SECRET|service.role key/i);
 });
 
 test("password recovery validates email and sends a reset request", async () => {
@@ -715,4 +773,259 @@ test("workspace shows an offline notice and clears it after reconnecting", async
     if (original) Object.defineProperty(window.navigator, "onLine", original);
     else delete window.navigator.onLine;
   }
+});
+
+test("section notifications filter activity and persist read status per user", async () => {
+  activityEvents = [
+    {
+      id: "lead-event",
+      source: "Website",
+      section: "leads",
+      message: "New lead added",
+      entity_id: "test-lead",
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: "followup-event",
+      source: "Website",
+      section: "followups",
+      message: "Follow-up scheduled",
+      entity_id: "test-lead",
+      created_at: new Date().toISOString(),
+    },
+  ];
+  const sessionFor = (id) => ({
+    ...auth,
+    session: { user: { id, email: `${id}@example.com` } },
+  });
+  await mount(h(modules.Sidebar.default), {
+    path: "/leads",
+    session: sessionFor("first-user"),
+  });
+  await settle(() =>
+    document.body.textContent.includes("1 unread update in this section"),
+  );
+  assert.ok(document.querySelector('[aria-label="Notifications, 2 unread"]'));
+  await act(async () => button("View updates").click());
+  const dialog = document.querySelector('[role="dialog"]');
+  assert.match(dialog.textContent, /New lead added/);
+  assert.doesNotMatch(dialog.textContent, /Follow-up scheduled/);
+  await settle(
+    () => !document.body.textContent.includes("unread update in this section"),
+  );
+  assert.deepEqual(activityReads, [{ event_id: "lead-event", user_id: "first-user" }]);
+  assert.equal(document.querySelector('button[aria-label="Notifications, 1 unread"]') !== null, true);
+  assert.equal(document.querySelector('[role="dialog"]').textContent.includes("Mark section read"), false);
+  const select = dialog.querySelector("select");
+  await act(async () => {
+    select.value = "/";
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+  });
+  assert.match(dialog.textContent, /Follow-up scheduled/);
+  await act(async () => button("Mark all read").click());
+  await settle(() => !document.querySelector('[aria-label*="unread"]'));
+  await act(async () => root.unmount());
+  root = null;
+  await mount(h(modules.Sidebar.default), { session: sessionFor("first-user") });
+  await act(async () => document.querySelector('[aria-label="Notifications"]').click());
+  await settle(() =>
+    document.querySelector('[role="dialog"]').textContent.includes("New lead added"),
+  );
+  assert.equal(button("Mark all read").disabled, true);
+  await act(async () => root.unmount());
+  root = null;
+  await mount(h(modules.Sidebar.default), { session: sessionFor("second-user") });
+  await settle(() => document.querySelector('[aria-label="Notifications, 2 unread"]'));
+});
+
+test("normal users can create a named lead section before adding records", async () => {
+  await mount(h(modules.Leads.default), {
+    session: {
+      ...auth,
+      session: { user: { id: "normal-user", email: "normal@example.com" } },
+      access: { is_admin: false, sources: [] },
+    },
+  });
+  await act(async () => button("New section").click());
+  const input = document.querySelector('[role="dialog"] input');
+  await act(async () => {
+    const props = input[Object.keys(input).find((key) => key.startsWith("__reactProps"))];
+    props.onChange({ target: { value: "October campaign" } });
+  });
+  await act(async () =>
+    document
+      .querySelector('[role="dialog"] form')
+      .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true })),
+  );
+  await settle(() => !document.querySelector('[role="dialog"]'));
+  assert.equal(pageLabels.get("Section / test-0"), "October campaign");
+  const selected = document.querySelector('[role="tab"][aria-selected="true"]');
+  assert.match(selected.textContent, /October campaign/);
+});
+
+test("Excel imports accept a new section name and a custom import name", async () => {
+  await mount(h(modules.Leads.default), {
+    session: {
+      ...auth,
+      session: { user: { id: "normal-user", email: "normal@example.com" } },
+      access: { is_admin: false, sources: [] },
+    },
+  });
+  await act(async () => button("Import Excel").click());
+  const dialog = document.querySelector('[role="dialog"]');
+  const destination = dialog.querySelector("select");
+  await act(async () => {
+    destination.value = "new";
+    destination.dispatchEvent(new window.Event("change", { bubbles: true }));
+  });
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Name", "Phone"],
+      ["Test contact", "1234567890"],
+    ]),
+    "Contacts",
+  );
+  const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+  const file = dialog.querySelector('input[type="file"]');
+  await act(async () => {
+    const props = file[Object.keys(file).find((key) => key.startsWith("__reactProps"))];
+    await props.onChange({
+      target: {
+        files: [
+          {
+            name: "original.xlsx",
+            size: bytes.byteLength,
+            arrayBuffer: async () => bytes,
+          },
+        ],
+      },
+    });
+  });
+  await act(async () => {
+    for (const [caption, value] of [
+      ["New section name", "Marketing enquiries"],
+      ["Import name", "October spreadsheet"],
+    ]) {
+      const label = [...dialog.querySelectorAll("label")].find((label) =>
+        label.textContent.includes(caption),
+      );
+      const input = label.querySelector("input");
+      const props =
+        input[Object.keys(input).find((key) => key.startsWith("__reactProps"))];
+      props.onChange({ target: { value } });
+    }
+  });
+  await act(async () => button("Upload 2 rows").click());
+  await settle(() =>
+    document.body.textContent.includes("rows uploaded into Marketing enquiries"),
+  );
+  assert.equal(pageLabels.get("Section / test-0"), "Marketing enquiries");
+  assert.ok(
+    importedRows.every(
+      (row) =>
+        row.source === "Section / test-0" && row.file_name === "October spreadsheet",
+    ),
+  );
+});
+
+test("compact uploaded records keep full data behind expandable details and can be edited", async () => {
+  fileRows = [
+    {
+      id: "uploaded-row",
+      source: "Website",
+      file_name: "October contacts",
+      fields: {
+        Name: "Test contact",
+        Phone: "1234567890",
+        Email: "contact@example.com",
+        Notes: "Long notes remain available in full.",
+      },
+    },
+  ];
+  await mount(h(modules.Leads.default));
+  await settle(() =>
+    document.querySelector('[aria-label="Compact uploaded records"] article'),
+  );
+  const record = document.querySelector(
+    '[aria-label="Compact uploaded records"] article',
+  );
+  assert.equal(record.querySelector("h3").textContent, "Test contact");
+  assert.match(record.textContent, /October contacts/);
+  const details = record.querySelector("details");
+  assert.equal(details.open, false);
+  await act(async () => details.querySelector("summary").click());
+  assert.equal(details.open, true);
+  assert.match(details.textContent, /Long notes remain available in full/);
+  await act(async () => record.querySelector("button").click());
+  assert.match(
+    document.querySelector('[role="dialog"]').textContent,
+    /Edit uploaded row/,
+  );
+  assert.equal(document.querySelectorAll('[role="dialog"] textarea').length, 4);
+});
+
+test("custom section deletion requires confirmation and returns to all leads", async () => {
+  sectionSources = ["Section / test-delete"];
+  pageLabels.set(sectionSources[0], "Old campaign");
+  await mount(h(modules.Leads.default), {
+    path: "/leads?source=Section%20%2F%20test-delete",
+  });
+  await settle(() => button("Delete section"));
+  await act(async () => button("Delete section").click());
+  assert.match(
+    document.querySelector('[role="dialog"]').textContent,
+    /all its leads, imported rows, follow-ups and shared access/,
+  );
+  await act(async () => button("Cancel").click());
+  assert.equal(sectionSources.length, 1);
+  await act(async () => button("Delete section").click());
+  await act(async () => button("Delete permanently").click());
+  await settle(
+    () => sectionSources.length === 0 && !document.querySelector('[role="dialog"]'),
+  );
+  assert.match(
+    document.querySelector('[role="tab"][aria-selected="true"]').textContent,
+    /All leads/,
+  );
+});
+
+test("unread activity marks the exact source tab and lead rows", async () => {
+  activityEvents = [
+    {
+      id: "new-contact",
+      source: "Website",
+      section: "leads",
+      message: "New lead added",
+      entity_id: "test-lead",
+      created_at: new Date().toISOString(),
+    },
+  ];
+  await mount(
+    h(
+      Routes,
+      null,
+      h(
+        Route,
+        { element: h(modules.Sidebar.default) },
+        h(Route, { path: "/leads", element: h(modules.Leads.default) }),
+      ),
+    ),
+    {
+      path: "/leads",
+      session: {
+        ...auth,
+        session: { user: { id: "indicator-user", email: "indicator@example.com" } },
+      },
+    },
+  );
+  await settle(() => document.querySelector('[role="tab"] [title*="New lead added"]'));
+  const tab = [...document.querySelectorAll('[role="tab"]')].find((tab) =>
+    tab.textContent.includes("Website"),
+  );
+  assert.ok(tab.querySelector('[role="status"]'));
+  const leadLink = document.querySelector('tbody a[href="/leads/test-lead"]');
+  assert.ok(leadLink.querySelector('[title*="New lead added"]'));
 });

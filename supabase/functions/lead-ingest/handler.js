@@ -84,9 +84,16 @@ export function createLeadHandler({ env, fetch }) {
     if (request.method !== "POST")
       return json({ error: "Use POST from your website backend." }, 405);
     if (!ready) return json({ error: "Lead receiver is not configured." }, 503);
+    const path = new URL(request.url).pathname;
+    const sheetRequest = path.endsWith("/sheet");
     const authorization = request.headers.get("authorization") || "";
     const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-    if (!supplied || !(await equalSecret(supplied, secret)))
+    if (
+      !supplied ||
+      (sheetRequest
+        ? !/^Bearer [\w-]{40,100}$/.test(authorization)
+        : !(await equalSecret(supplied, secret)))
+    )
       return json({ error: "Unauthorized." }, 401);
     if (!request.headers.get("content-type")?.includes("application/json"))
       return json({ error: "Send application/json." }, 415);
@@ -122,6 +129,43 @@ export function createLeadHandler({ env, fetch }) {
           400,
         );
       }
+      let source = lead.source;
+      if (sheetRequest) {
+        const tokenHash = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(supplied),
+        );
+        const hash = Array.from(new Uint8Array(tokenHash), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+        const connection = await fetch(
+          `${url.replace(/\/$/, "")}/rest/v1/rpc/crm_sheet_connection_owner`,
+          {
+            method: "POST",
+            headers: {
+              apikey: databaseKey,
+              Authorization: `Bearer ${databaseKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ token_hash: hash }),
+            signal: AbortSignal.timeout(10000),
+          },
+        );
+        if (!connection.ok) {
+          console.error("Sheet connection lookup failed with HTTP", connection.status);
+          return json(
+            { error: "Sheet connection is unavailable. Reconnect it from the CRM." },
+            401,
+          );
+        }
+        const ownerId = await connection.json();
+        if (typeof ownerId !== "string" || !/^[0-9a-f-]{36}$/i.test(ownerId))
+          return json(
+            { error: "Sheet connection is unavailable. Reconnect it from the CRM." },
+            401,
+          );
+        source = `Personal leads / ${ownerId}`;
+      }
       const response = await fetch(
         `${url.replace(/\/$/, "")}/rest/v1/leads?on_conflict=phone&select=id`,
         {
@@ -132,7 +176,7 @@ export function createLeadHandler({ env, fetch }) {
             "Content-Type": "application/json",
             Prefer: "resolution=ignore-duplicates,return=representation",
           },
-          body: JSON.stringify(lead),
+          body: JSON.stringify({ ...lead, source }),
           signal: AbortSignal.timeout(10000),
         },
       );

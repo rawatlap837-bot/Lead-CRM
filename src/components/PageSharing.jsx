@@ -3,6 +3,7 @@ import { invitePageMember, pageMembers, revokePageMember } from "../lib/page-acc
 import useLoad from "../lib/useLoad";
 import { useToast } from "../context/toast-state";
 export default function PageSharing({ source }) {
+  const personal = source.startsWith("Personal leads / ");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -44,10 +45,13 @@ export default function PageSharing({ source }) {
   }
   return (
     <div className="mt-4 border-t border-slate-100 pt-4">
-      <h4 className="text-sm font-semibold">Share this landing page</h4>
+      <h4 className="text-sm font-semibold">
+        {personal ? "Share this workspace" : "Share this landing page"}
+      </h4>
       <p className="mt-1 text-xs leading-5 text-slate-500">
-        Invited people can view, edit and delete leads, manage follow-ups and export
-        reports for this page only.
+        {personal
+          ? "Anyone you invite by email can view, edit and delete leads, manage follow-ups, and export reports in this workspace."
+          : "Invited people can view, edit and delete leads, manage follow-ups and export reports for this page only."}
       </p>
       <form className="mt-3 flex flex-col gap-2" onSubmit={invite}>
         <label className="text-xs text-slate-600">

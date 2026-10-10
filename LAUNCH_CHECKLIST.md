@@ -9,6 +9,8 @@
 
 ## Before publishing
 
+For activity notifications, run `supabase/activity-notifications.sql` after the existing page, personal workspace, file import, and page-name migrations. See `NOTIFICATIONS_SETUP.md` for behavior and verification.
+
 1. Confirm the database has the policies in `supabase/page-access.sql` and the intended administrator from `supabase/admin-bootstrap.sql`. The access-context RPC must be installed. Review existing policies before applying SQL to production.
 2. If using file uploads and page renaming, confirm `supabase/flexible-imports.sql` and `supabase/page-names.sql` are installed.
    Run `supabase/personal-workspaces.sql` after page-access and flexible-imports to allow normal users to save their own leads and uploads. The frontend buttons alone cannot grant database permission. Re-run this migration last if reinstalling page-access.sql later.

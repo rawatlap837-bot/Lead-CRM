@@ -1,9 +1,11 @@
+import UpdateIndicator from "./UpdateIndicator";
 import { sourceName } from "../lib/personalWorkspace";
 import { useState } from "react";
 import useLoad from "../lib/useLoad";
 import { fetchFileRows, updateFileRow } from "../lib/flexibleImports";
 import Modal from "./Modal";
-export default function FileData({ source, version }) {
+import CompactRecord from "./CompactRecord";
+export default function FileData({ source, version, pageNames, ownSource }) {
   const [page, setPage] = useState(0);
   const [edit, setEdit] = useState(null);
   const [fields, setFields] = useState({});
@@ -17,6 +19,11 @@ export default function FileData({ source, version }) {
   } = useLoad(() => fetchFileRows(source, page), [source, page, version]);
   const rows = data?.data || [];
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row.fields)))];
+  function editRow(row) {
+    setEdit(row);
+    setFields({ ...row.fields });
+    setError("");
+  }
   async function save(event) {
     event.preventDefault();
     if (busy) return;
@@ -34,7 +41,9 @@ export default function FileData({ source, version }) {
   }
   return (
     <section className="card mt-6 p-3 sm:p-5">
-      <h2 className="section-heading">Uploaded file data</h2>
+      <h2 className="section-heading">
+        Uploaded file data{source && <UpdateIndicator source={source} section="leads" />}
+      </h2>
       <p className="mt-2 text-sm text-slate-500">
         Original rows and columns from your files. The first row is preserved, even if it
         contains headings.
@@ -47,7 +56,36 @@ export default function FileData({ source, version }) {
         <p className="mt-3 text-sm text-slate-500">No uploaded rows in this tab.</p>
       ) : (
         <>
-          <div className="mt-4 overflow-x-auto">
+          <div
+            className="mt-3 grid gap-2 md:hidden"
+            aria-label="Compact uploaded records"
+          >
+            {rows.map((row) => {
+              const entries = Object.entries(row.fields);
+              const title =
+                entries.find(([, value]) => String(value ?? "").trim())?.[1] ||
+                "Uploaded row";
+              return (
+                <CompactRecord
+                  key={row.id}
+                  title={String(title)}
+                  subtitle={[row.file_name, sourceName(row.source, pageNames, ownSource)]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  entries={entries}
+                  actions={
+                    <button
+                      className="btn-secondary !min-h-9 !px-3 !py-1.5 !text-xs"
+                      onClick={() => editRow(row)}
+                    >
+                      Edit row
+                    </button>
+                  }
+                />
+              );
+            })}
+          </div>
+          <div className="mt-4 hidden overflow-x-auto md:block">
             <table className="responsive-table">
               <thead>
                 <tr>
@@ -62,7 +100,7 @@ export default function FileData({ source, version }) {
                 {rows.map((row) => (
                   <tr key={row.id}>
                     <td data-label="Page" className="break-words">
-                      {sourceName(row.source)}
+                      {sourceName(row.source, pageNames, ownSource)}
                     </td>
                     {columns.map((key) => (
                       <td
@@ -74,14 +112,7 @@ export default function FileData({ source, version }) {
                       </td>
                     ))}
                     <td data-label="Actions">
-                      <button
-                        className="btn-secondary"
-                        onClick={() => {
-                          setEdit(row);
-                          setFields({ ...row.fields });
-                          setError("");
-                        }}
-                      >
+                      <button className="btn-secondary" onClick={() => editRow(row)}>
                         Edit row
                       </button>
                     </td>

@@ -10,6 +10,7 @@ try {
 }
 export { configError };
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabaseAnonKey = key || "";
 export const isConfigured = Boolean(url && key);
 const previous = import.meta.hot?.data.client;
 export const supabase = isConfigured

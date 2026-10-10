@@ -56,6 +56,7 @@ before(async () => {
   process.env.VITE_SUPABASE_URL = `http://127.0.0.1:${httpServer.address().port}`;
   process.env.VITE_SUPABASE_ANON_KEY = "local-test-anon";
   vite = await createServer({
+    configLoader: "runner",
     server: { middlewareMode: true, hmr: false, ws: false },
     cacheDir: "node_modules/.vite-tests",
     optimizeDeps: { noDiscovery: true, include: [] },

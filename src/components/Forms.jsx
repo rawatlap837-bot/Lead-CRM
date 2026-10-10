@@ -22,7 +22,14 @@ export function StatusSelect({ value, onChange, disabled, label = "Lead status" 
     </select>
   );
 }
-export function LeadForm({ lead, defaultSource, onSave, onCancel, onBusyChange }) {
+export function LeadForm({
+  lead,
+  defaultSource,
+  pageNames,
+  onSave,
+  onCancel,
+  onBusyChange,
+}) {
   const { access } = useAuth();
   const pending = useRef(false);
   const [values, setValues] = useState({
@@ -110,7 +117,7 @@ export function LeadForm({ lead, defaultSource, onSave, onCancel, onBusyChange }
             >
               {access.sources.map((source) => (
                 <option key={source} value={source}>
-                  {sourceName(source, {}, access?.personal_source)}
+                  {sourceName(source, pageNames, access?.personal_source)}
                 </option>
               ))}
             </select>

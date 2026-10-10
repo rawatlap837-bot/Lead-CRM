@@ -79,6 +79,49 @@ test("Website delivery authenticates, validates, and preserves existing leads on
   });
   assert.equal(calls, 2);
 });
+test("Google Sheets delivery resolves its owner and inserts only into that personal workspace", async () => {
+  const token = "s".repeat(64);
+  const owner = "00000000-0000-0000-0000-000000000001";
+  const sheetEnv = (key) => secrets[key];
+  let inserted;
+  const handler = createLeadHandler({
+    env: sheetEnv,
+    fetch: async (url, options) => {
+      if (url.includes("crm_sheet_connection_owner")) {
+        const hash = Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)),
+          ),
+          (byte) => byte.toString(16).padStart(2, "0"),
+        ).join("");
+        assert.equal(JSON.parse(options.body).token_hash, hash);
+        assert.equal(options.headers.Authorization, "Bearer server-key");
+        return Response.json(owner);
+      }
+      inserted = { url, options };
+      return Response.json([{ id: "saved" }]);
+    },
+  });
+  const response = await handler(
+    new Request("https://receiver/functions/v1/lead-ingest/sheet", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        apikey: "public-anon-key",
+      },
+      body: JSON.stringify({
+        name: "Sheet lead",
+        phone: "+919876543210",
+        source: "Another user's data",
+      }),
+    }),
+  );
+  assert.equal(response.status, 201);
+  assert.equal(inserted.options.headers.Authorization, "Bearer server-key");
+  assert.equal(inserted.options.headers.apikey, "server-key");
+  assert.equal(JSON.parse(inserted.options.body).source, `Personal leads / ${owner}`);
+});
 test("Meta verifies subscription and raw signature before retrieving and saving contacts", async () => {
   let calls = 0;
   const handler = createMetaHandler({

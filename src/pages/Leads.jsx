@@ -1,10 +1,12 @@
+import UpdateIndicator from "../components/UpdateIndicator";
 import { sourceName } from "../lib/personalWorkspace";
 import { fetchPageNames } from "../lib/pageNames";
 import FileData from "../components/FileData";
 import PageName from "../components/PageName";
+import NewSection from "../components/NewSection";
 import ImportLeads from "../components/ImportLeads";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useOutletContext } from "react-router-dom";
 import { Plus, Search, ChevronLeft, ChevronRight, ArrowUpRight } from "lucide-react";
 import {
   fetchLeads,
@@ -28,10 +30,18 @@ import Avatar from "../components/Avatar";
 import useAutoRefresh from "../lib/useAutoRefresh";
 import { useAuth } from "../context/auth-state";
 export default function Leads() {
-  const { access } = useAuth();
+  const activity = useOutletContext()?.activity;
+  function readLead(id) {
+    const ids = (activity?.events || [])
+      .filter((event) => !event.read && event.entity_id === id)
+      .map((event) => event.id);
+    if (ids.length) activity.markRead(ids);
+  }
+  const { access, refreshAccess } = useAuth();
   const canCreate = Boolean(access?.is_admin || access?.sources?.length);
   const { data: pageNames, reload: reloadNames } = useLoad(fetchPageNames, []);
   const [importOpen, setImportOpen] = useState(false);
+  const [sectionOpen, setSectionOpen] = useState(false);
   const [fileVersion, setFileVersion] = useState(0);
   const [params, setParams] = useSearchParams();
   const [modal, setModal] = useState(params.get("add") === "1");
@@ -148,34 +158,64 @@ export default function Leads() {
                 total: sourceStats[name]?.total || 0,
               })),
             ].map((tab) => (
-              <button
-                key={tab.name || "all"}
-                type="button"
-                role="tab"
-                aria-selected={source === tab.name}
-                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition ${source === tab.name ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"}`}
-                onClick={() => {
-                  setSource(tab.name);
-                  setPage(0);
-                }}
-              >
-                {tab.label}
-                <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">
-                  {tab.total}
-                </span>
-              </button>
+              <div key={tab.name || "all"} className="flex shrink-0 items-center">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={source === tab.name}
+                  className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition ${source === tab.name ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"}`}
+                  onClick={() => {
+                    setSource(tab.name);
+                    const ids = (activity?.events || [])
+                      .filter(
+                        (event) =>
+                          !event.read && !event.entity_id && event.source === tab.name,
+                      )
+                      .map((event) => event.id);
+                    if (ids.length) activity.markRead(ids);
+                    setPage(0);
+                  }}
+                >
+                  {tab.label}
+                  {tab.name && <UpdateIndicator source={tab.name} />}
+                  <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">
+                    {tab.total}
+                  </span>
+                </button>
+                {tab.name &&
+                  source === tab.name &&
+                  (access?.is_admin || access?.sources?.includes(tab.name)) && (
+                    <PageName
+                      key={source}
+                      source={source}
+                      name={sourceName(source, pageNames, access?.personal_source)}
+                      onSaved={reloadNames}
+                      onDeleted={async () => {
+                        setSource("");
+                        setPage(0);
+                        setParams({});
+                        await refreshAccess?.();
+                        await Promise.all([
+                          reloadSources(),
+                          reloadStats(),
+                          reloadNames(),
+                        ]);
+                        setFileVersion((value) => value + 1);
+                        toast("Section deleted");
+                      }}
+                    />
+                  )}
+              </div>
             ))}
           </div>
-          {source && (access?.is_admin || access?.sources?.includes(source)) && (
-            <div className="pb-4">
-              <PageName
-                key={source}
-                source={source}
-                name={sourceName(source, pageNames, access?.personal_source)}
-                onSaved={reloadNames}
-              />
-            </div>
-          )}
+          <button
+            type="button"
+            className="btn-secondary mb-3"
+            onClick={() => setSectionOpen(true)}
+          >
+            <Plus size={16} />
+            New section
+          </button>
         </div>
         <div className="grid grid-cols-1 gap-3 border-b border-slate-100 p-4 sm:grid-cols-3">
           {[
@@ -245,7 +285,47 @@ export default function Leads() {
           <LoadError error={error} reload={reload} />
         ) : data.data.length ? (
           <>
-            <div className="overflow-x-auto">
+            <div className="grid gap-2 p-3 md:hidden" aria-label="Compact lead records">
+              {data.data.map((lead) => (
+                <article key={lead.id} className="rounded-xl border border-slate-200 p-3">
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <Link
+                      className="min-w-0 truncate text-sm font-semibold"
+                      to={`/leads/${lead.id}`}
+                      onClick={() => readLead(lead.id)}
+                    >
+                      {lead.name}
+                      <UpdateIndicator entityId={lead.id} />
+                    </Link>
+                    <StatusSelect
+                      value={lead.status}
+                      disabled={busy === lead.id}
+                      onChange={(value) => update(lead.id, value)}
+                      label={`Mobile status for ${lead.name}`}
+                    />
+                  </div>
+                  <a
+                    className="mt-1 inline-flex min-h-9 items-center text-xs text-slate-500"
+                    href={`tel:${lead.phone}`}
+                  >
+                    {lead.phone}
+                  </a>
+                  <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                    <span className="min-w-0 truncate text-[11px] text-slate-400">
+                      {sourceName(lead.source, pageNames, access?.personal_source)}
+                    </span>
+                    <Link
+                      className="inline-flex min-h-9 shrink-0 items-center gap-1 text-xs font-semibold text-indigo-600"
+                      to={`/leads/${lead.id}`}
+                      onClick={() => readLead(lead.id)}
+                    >
+                      View details <ArrowUpRight size={13} />
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="responsive-table">
                 <thead>
                   <tr>
@@ -271,9 +351,11 @@ export default function Leads() {
                         <Link
                           className="flex items-center gap-3 font-semibold hover:text-indigo-600"
                           to={`/leads/${lead.id}`}
+                          onClick={() => readLead(lead.id)}
                         >
                           <Avatar name={lead.name} />
                           {lead.name}
+                          <UpdateIndicator entityId={lead.id} />
                         </Link>
                       </td>
                       <td data-label="Phone">
@@ -305,6 +387,7 @@ export default function Leads() {
                         <Link
                           className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600"
                           to={`/leads/${lead.id}`}
+                          onClick={() => readLead(lead.id)}
                         >
                           View <ArrowUpRight size={14} />
                         </Link>
@@ -359,22 +442,58 @@ export default function Leads() {
           />
         )}
       </section>
-      <FileData key={source} source={source} version={fileVersion} />
+      <FileData
+        key={source}
+        source={source}
+        version={fileVersion}
+        pageNames={pageNames}
+        ownSource={access?.personal_source}
+      />
+      {sectionOpen && (
+        <Modal
+          title="New lead section"
+          busy={saving}
+          onClose={() => setSectionOpen(false)}
+        >
+          <NewSection
+            onBusyChange={setSaving}
+            onCancel={() => setSectionOpen(false)}
+            onCreated={async (selected) => {
+              await refreshAccess?.();
+              await Promise.all([reloadSources(), reloadNames()]);
+              setSource(selected);
+              setPage(0);
+              setSectionOpen(false);
+              toast(
+                "Section created. Add a lead or import a file to get started.",
+                "success",
+              );
+            }}
+          />
+        </Modal>
+      )}
       {importOpen && (
         <Modal
-          title="Import leads into a landing page"
+          title="Import Excel or CSV"
           busy={saving}
           onClose={() => setImportOpen(false)}
         >
           <ImportLeads
             sources={sources}
+            pageNames={pageNames}
             defaultSource={source}
             onBusyChange={setSaving}
             onImported={async (selected) => {
               setFileVersion((v) => v + 1);
               setSource(selected);
               setPage(0);
-              await Promise.all([reload(), reloadSources(), reloadStats()]);
+              await refreshAccess?.();
+              await Promise.all([
+                reload(),
+                reloadSources(),
+                reloadStats(),
+                reloadNames(),
+              ]);
             }}
           />
         </Modal>
@@ -382,6 +501,7 @@ export default function Leads() {
       {modal && canCreate && (
         <Modal title="Add a new lead" onClose={close} busy={saving}>
           <LeadForm
+            pageNames={pageNames}
             defaultSource={source}
             onSave={add}
             onCancel={close}

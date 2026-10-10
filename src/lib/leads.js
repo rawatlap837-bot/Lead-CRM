@@ -1,4 +1,5 @@
 import { fileSources, fileStats } from "./flexibleImports";
+import { fetchSectionSources } from "./sections";
 import { supabase } from "./supabase";
 import { rangeFor, todayIST } from "./dates";
 import { validDate, validateFollowup } from "./validation";
@@ -61,6 +62,7 @@ export async function fetchLeadSources() {
     if (data.length < 1000) break;
   }
   (await fileSources()).forEach((source) => sources.add(source));
+  (await fetchSectionSources()).forEach((source) => sources.add(source));
   return [...sources].sort((a, b) => a.localeCompare(b));
 }
 export async function fetchLeadSourceStats() {
@@ -178,19 +180,15 @@ export async function rescheduleFollowup(previous, values) {
     );
   }
 }
-export async function fetchReport(range) {
+export async function fetchReport(range, source) {
   const all = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data } = await result(
-      client()
-        .from("leads")
-        .select("*")
-        .gte("created_at", range.from)
-        .lt("created_at", range.to)
-        .order("created_at", { ascending: false })
-        .order("id")
-        .range(offset, offset + 999),
-    );
+    let query = client().from("leads").select("*");
+    if (range.from) query = query.gte("created_at", range.from);
+    if (range.to) query = query.lt("created_at", range.to);
+    query = query.order("created_at", { ascending: false }).order("id");
+    if (source) query = query.eq("source", source);
+    const { data } = await result(query.range(offset, offset + 999));
     all.push(...data);
     if (data.length < 1000) break;
   }

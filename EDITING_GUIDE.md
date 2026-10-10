@@ -32,11 +32,15 @@ On Windows PowerShell, use `npm.cmd` if execution policy blocks `npm`. If the re
 | Colors, buttons, cards, mobile layouts | `src/index.css` |
 | Font stack and Tailwind theme | `tailwind.config.js` |
 | Navigation links and mobile menu | `src/components/Sidebar.jsx` |
+| Notification bell, filters, and read actions | `src/components/ActivityNotifications.jsx` |
+| Notification polling and database queries | `src/lib/useActivity.js`, `src/lib/activity.js` |
 | Routes and page loading | `src/App.jsx` |
 | Login screen and login actions | `src/pages/Login.jsx` |
 | Password recovery screen | `src/pages/ResetPassword.jsx` |
 | Dashboard and overview cards | `src/pages/Dashboard.jsx`, `src/components/StatCard.jsx` |
 | Lead list, search, filters, pagination | `src/pages/Leads.jsx` |
+| Named lead sections | `src/components/NewSection.jsx`, `src/lib/sections.js` |
+| Compact mobile uploaded rows | `src/components/CompactRecord.jsx` |
 | Lead details and follow-up history | `src/pages/LeadDetail.jsx` |
 | Lead and follow-up form fields | `src/components/Forms.jsx` |
 | Form validation rules | `src/lib/validation.js` |
